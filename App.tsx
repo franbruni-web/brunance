@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, ShieldCheck, CloudDownload } from 'lucide-react';
+import { PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, ShieldCheck, CloudDownload, Zap } from 'lucide-react';
 import TransactionForm from './components/ExpenseForm';
 import HistoryList from './components/HistoryList';
 import Dashboard from './components/Dashboard';
 import { Transaction } from './types';
 import { format, addMonths, subMonths, endOfMonth, isWithinInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+const APP_VERSION = "4.3.0 iOS-Sync";
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'stats' | 'settings'>('add');
@@ -76,7 +78,6 @@ const App: React.FC = () => {
 
     setIsSyncing(true);
     try {
-      // 1. Descargar datos actuales de la nube
       const response = await fetch(sheetsUrl);
       let remoteData: Transaction[] = [];
       
@@ -89,11 +90,7 @@ const App: React.FC = () => {
         }
       }
 
-      // 2. MERGE INTELIGENTE
-      // a) Eliminar de los datos remotos lo que nosotros ya borramos localmente
       const filteredRemote = remoteData.filter(rt => !deletedIds.includes(rt.id));
-      
-      // b) Combinar con los locales (evitando duplicados)
       const localMap = new Map(transactions.map(t => [t.id, t]));
       filteredRemote.forEach(rt => {
         if (!localMap.has(rt.id)) {
@@ -105,7 +102,6 @@ const App: React.FC = () => {
         new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
-      // 3. Subir la lista combinada (POST)
       await fetch(sheetsUrl, {
         method: 'POST',
         mode: 'no-cors',
@@ -113,7 +109,6 @@ const App: React.FC = () => {
         body: JSON.stringify(mergedData),
       });
       
-      // 4. Actualizar estado y LIMPIAR lista de borrados solo si tuvo éxito
       setTransactions(mergedData.map(t => ({ ...t, synced: true })));
       setDeletedIds([]);
       localStorage.removeItem('brunance_deleted_ids');
@@ -127,10 +122,19 @@ const App: React.FC = () => {
     }
   };
 
+  const forceAppUpdate = () => {
+    if (confirm('Esto refrescará Brunance para buscar actualizaciones. ¿Continuar?')) {
+        // En iOS, esto es lo más cercano a un refresh real en PWA
+        window.location.replace(window.location.href);
+        setTimeout(() => {
+            window.location.reload();
+        }, 100);
+    }
+  };
+
   // Auto-Sync al abrir la app
   useEffect(() => {
     if (sheetsUrl && !hasAutoSynced.current) {
-        // Pequeño delay para que la UI cargue primero
         const timer = setTimeout(() => {
             handleSync(true);
             hasAutoSynced.current = true;
@@ -253,6 +257,23 @@ function doPost(e) {
                     <h2 className="text-2xl font-black text-slate-800 pt-2">Brunance Panel</h2>
                 </div>
 
+                {/* BOTÓN DE ACTUALIZACIÓN RÁPIDA (PARA IOS) */}
+                <button 
+                    onClick={forceAppUpdate}
+                    className="w-full flex items-center justify-between p-4 bg-indigo-600 text-white rounded-3xl shadow-lg shadow-indigo-200 active:scale-95 transition-all"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="bg-white/20 p-2 rounded-xl">
+                            <Zap size={20} className="fill-white" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Nueva Versión</p>
+                            <p className="text-sm font-bold">Actualizar Aplicación</p>
+                        </div>
+                    </div>
+                    <RefreshCw size={20} />
+                </button>
+
                 <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
                     <div className="flex items-center gap-2 font-black text-slate-800 uppercase text-xs tracking-wider">
                         <Smartphone size={16} className="text-teal-600" />
@@ -298,14 +319,14 @@ function doPost(e) {
                             onClick={copyScriptCode}
                             className="w-full flex items-center justify-center gap-2 py-3 bg-teal-600 text-white text-xs font-black rounded-xl hover:bg-teal-700 transition-colors shadow-md"
                         >
-                            <Copy size={14} /> Copiar Nuevo Código (Merge)
+                            <Copy size={14} /> Copiar Código
                         </button>
                         <button 
                             onClick={() => handleSync(false)}
                             disabled={isSyncing}
                             className="w-full flex items-center justify-center gap-2 py-3 bg-white text-teal-600 border border-teal-200 text-xs font-black rounded-xl hover:bg-teal-50 transition-colors"
                         >
-                            <CloudDownload size={14} /> Forzar Sincronización Total
+                            <CloudDownload size={14} /> Sincronización Manual
                         </button>
                     </div>
                 </div>
@@ -315,14 +336,14 @@ function doPost(e) {
                     <div className="space-y-3">
                         <div className="flex justify-between text-xs py-1 border-b border-slate-50">
                             <span className="text-slate-500 font-medium">Build</span>
-                            <span className="font-black text-slate-800">4.2.0 Auto-Sync + Tombstones</span>
+                            <span className="font-black text-slate-800">{APP_VERSION}</span>
                         </div>
                         <div className="flex justify-between text-xs py-1 border-b border-slate-50">
                             <span className="text-slate-500 font-medium">Registros</span>
                             <span className="font-black text-slate-800">{transactions.length}</span>
                         </div>
                         <div className="flex justify-between text-[10px] py-1 border-b border-slate-50">
-                            <span className="text-slate-400 font-medium italic">Pendientes de borrar en nube</span>
+                            <span className="text-slate-400 font-medium italic">En cola de borrado</span>
                             <span className="font-black text-red-400">{deletedIds.length}</span>
                         </div>
                     </div>
