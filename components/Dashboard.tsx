@@ -19,6 +19,13 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, onSettle, selectedMonth }) => {
   const [currencyView, setCurrencyView] = useState<Currency>('ARS');
 
+  // Función de normalización para asegurar match entre dispositivos
+  const findMethod = (id: string) => {
+    if (!id) return null;
+    const normalizedId = id.toString().trim().toLowerCase();
+    return PAYMENT_METHODS.find(m => m.id.toLowerCase().trim() === normalizedId);
+  };
+
   // Transacciones del mes para Ingresos/Gastos
   const filteredByCurrency = useMemo(() => 
     transactions.filter(t => t.currency === currencyView),
@@ -37,18 +44,18 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
 
     history.forEach(t => {
         if (t.nature === 'Transferencia') {
-          const fromMethod = PAYMENT_METHODS.find(m => m.id === t.paymentMethodId);
-          const fromName = fromMethod ? fromMethod.name : `Cuenta Desconocida (${t.paymentMethodId})`;
+          const fromMethod = findMethod(t.paymentMethodId);
+          const fromName = fromMethod ? fromMethod.name : `ID No Encontrado: ${t.paymentMethodId}`;
           data[fromName] = (data[fromName] || 0) - t.amount;
 
-          const toMethod = t.toPaymentMethodId ? PAYMENT_METHODS.find(m => m.id === t.toPaymentMethodId) : null;
+          const toMethod = t.toPaymentMethodId ? findMethod(t.toPaymentMethodId) : null;
           if (toMethod || t.toPaymentMethodId) {
-            const toName = toMethod ? toMethod.name : `Cuenta Desconocida (${t.toPaymentMethodId})`;
+            const toName = toMethod ? toMethod.name : `ID No Encontrado: ${t.toPaymentMethodId}`;
             data[toName] = (data[toName] || 0) + t.amount;
           }
         } else {
-          const method = PAYMENT_METHODS.find(m => m.id === t.paymentMethodId);
-          const name = method ? method.name : "Otras Cuentas / Legacy";
+          const method = findMethod(t.paymentMethodId);
+          const name = method ? method.name : (t.paymentMethodId ? `ID No Encontrado: ${t.paymentMethodId}` : "Sin Cuenta");
           const value = t.nature === 'Ingreso' ? t.amount : -t.amount;
           data[name] = (data[name] || 0) + value;
         }
