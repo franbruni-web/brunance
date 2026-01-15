@@ -166,7 +166,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
           Script de Integración
         </h3>
         <p className="text-[11px] text-indigo-700 mb-4 leading-tight">
-          Copia este código en <b>Extensiones > Apps Script</b> dentro de tu Google Sheet y publícalo como "Web App".
+          Copia este código en <b>Extensiones &gt; Apps Script</b> dentro de tu Google Sheet y publícalo como "Web App".
         </p>
         <button 
           onClick={handleCopyScript}
