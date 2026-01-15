@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Send, Banknote, Wallet, CreditCard, ArrowLeftRight, Landmark, Calendar, ArrowRight, User, AlertCircle } from 'lucide-react';
+import { Send, Banknote, Wallet, CreditCard, ArrowLeftRight, Landmark, Calendar, ArrowRight, User, AlertCircle, Calculator } from 'lucide-react';
 import { Payer, ExpenseType, PaymentMethod, PaymentCategory, TransactionNature, Currency, Transaction } from '../types';
 import { PAYMENT_METHODS } from '../constants';
 import { format } from 'date-fns';
@@ -27,6 +27,20 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
   const [toPaymentMethodId, setToPaymentMethodId] = useState(prefill?.toPaymentMethodId || PAYMENT_METHODS[1].id);
 
   const isSettlement = prefill?.isSettlement || false;
+
+  // Lógica de Calculadora
+  const evaluatedAmount = useMemo(() => {
+    if (!amount) return 0;
+    try {
+      // Limpiar el input de caracteres no válidos para seguridad básica
+      const sanitized = amount.replace(/[^-+*/().0-9]/g, '');
+      // eslint-disable-next-line no-new-func
+      const result = new Function(`return ${sanitized}`)();
+      return typeof result === 'number' && isFinite(result) ? Math.max(0, result) : 0;
+    } catch (e) {
+      return 0;
+    }
+  }, [amount]);
 
   const accountBalances = useMemo(() => {
     const balances: Record<string, number> = {};
@@ -118,15 +132,15 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numAmount = parseFloat(amount);
-    if (!numAmount || (nature !== 'Transferencia' && !description)) return;
+    const finalAmount = evaluatedAmount;
+    if (!finalAmount || (nature !== 'Transferencia' && !description)) return;
 
     const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethodId);
 
     if (nature !== 'Ingreso') {
       if (selectedMethod && selectedMethod.category !== PaymentCategory.TARJETA_CREDITO) {
         const bal = accountBalances[paymentMethodId] || 0;
-        if (bal < numAmount) {
+        if (bal < finalAmount) {
           alert(`Saldo insuficiente en ${selectedMethod.name}. Disponible: $${bal}`);
           return;
         }
@@ -146,7 +160,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
     }
 
     onAdd({
-      amount: numAmount,
+      amount: finalAmount,
       currency,
       description: finalDescription,
       payer,
@@ -190,23 +204,33 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
         ))}
       </div>
 
-      {/* Monto y Moneda */}
+      {/* Monto y Moneda con Calculadora */}
       <div className="grid grid-cols-4 gap-3">
         <div className="col-span-3 relative">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Monto</label>
-          <div className="relative flex items-center">
-              <span className={`absolute left-4 text-2xl font-bold ${
-                nature === 'Ingreso' ? 'text-green-500' : nature === 'Transferencia' ? 'text-indigo-500' : 'text-slate-400'
-              }`}>$</span>
-              <input
-                  type="number"
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full bg-white border-none rounded-2xl py-6 pl-10 pr-4 text-3xl font-bold text-slate-800 focus:ring-2 focus:ring-teal-500 shadow-sm"
-                  required
-              />
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block flex items-center gap-1.5">
+            <Calculator size={12} className="text-teal-600" />
+            Monto / Calculadora
+          </label>
+          <div className="relative flex flex-col">
+              <div className="relative flex items-center">
+                  <span className={`absolute left-4 text-2xl font-bold ${
+                    nature === 'Ingreso' ? 'text-green-500' : nature === 'Transferencia' ? 'text-indigo-500' : 'text-slate-400'
+                  }`}>$</span>
+                  <input
+                      type="text"
+                      inputMode="text"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-white border-none rounded-2xl py-6 pl-10 pr-4 text-2xl font-bold text-slate-800 focus:ring-2 focus:ring-teal-500 shadow-sm"
+                      required
+                  />
+              </div>
+              {amount && amount.match(/[+*/-]/) && (
+                <div className="absolute -bottom-2 right-4 bg-teal-100 text-teal-700 px-3 py-1 rounded-full text-xs font-black shadow-sm flex items-center gap-1 animate-in fade-in slide-in-from-top-1">
+                   = ${evaluatedAmount.toLocaleString()}
+                </div>
+              )}
           </div>
         </div>
         <div className="col-span-1">
@@ -334,7 +358,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
               {filteredMethods.map((method) => {
                 const bal = accountBalances[method.id] || 0;
                 const isLiquid = method.category !== PaymentCategory.TARJETA_CREDITO;
-                const currentAmount = parseFloat(amount) || 0;
+                const currentAmount = evaluatedAmount || 0;
                 const hasFunds = !isLiquid || nature === 'Ingreso' || (bal > 0 && bal >= currentAmount);
 
                 return (
@@ -385,7 +409,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
                 >
                   {originMethods.map(m => {
                     const bal = accountBalances[m.id] || 0;
-                    const canSend = bal > 0 && bal >= (parseFloat(amount) || 0);
+                    const canSend = bal > 0 && bal >= (evaluatedAmount || 0);
                     return (
                       <option key={m.id} value={m.id} disabled={!canSend}>
                         {m.name} {canSend ? `(Saldo: $${bal})` : `(Bloqueado: $${bal})`}
@@ -466,3 +490,4 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
 };
 
 export default TransactionForm;
+
