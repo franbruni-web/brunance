@@ -16,24 +16,31 @@ const App: React.FC = () => {
   const [prefill, setPrefill] = useState<any>(null);
   const [sheetsUrl, setSheetsUrl] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // 1. Cargar datos iniciales
+  // 1. Cargar configuración inicial del localStorage
   useEffect(() => {
     const saved = localStorage.getItem('brunance_transactions');
     const savedUrl = localStorage.getItem('brunance_sheets_url');
+    
     if (saved) {
       try {
-        setTransactions(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setTransactions(parsed);
       } catch (e) {
-        console.error("Error cargando datos:", e);
+        console.error("Error cargando datos locales:", e);
       }
     }
     if (savedUrl) setSheetsUrl(savedUrl);
+    setIsInitialized(true);
   }, []);
 
+  // Guardar en localStorage cada vez que cambian las transacciones
   useEffect(() => {
-    localStorage.setItem('brunance_transactions', JSON.stringify(transactions));
-  }, [transactions]);
+    if (isInitialized) {
+      localStorage.setItem('brunance_transactions', JSON.stringify(transactions));
+    }
+  }, [transactions, isInitialized]);
 
   useEffect(() => {
     localStorage.setItem('brunance_sheets_url', sheetsUrl);
@@ -55,70 +62,76 @@ const App: React.FC = () => {
     });
   }, [transactions, selectedMonth]);
 
-  // Función de sincronización mejorada
-  const handleSync = async (dataToSync?: Transaction[], silent: boolean = false) => {
-    const targetUrl = sheetsUrl || localStorage.getItem('brunance_sheets_url');
-    if (!targetUrl) {
-      if (!silent) {
-        alert("Configura el link de Google Sheets en Ajustes.");
-        setView('settings');
-      }
-      return;
-    }
-
-    const payload = dataToSync || transactions;
+  // Función para SUBIR datos (Push)
+  const handlePush = async (dataToPush: Transaction[], silent: boolean = false) => {
+    if (!sheetsUrl) return;
     setIsSyncing(true);
-    
     try {
-      await fetch(targetUrl, {
+      await fetch(sheetsUrl, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(dataToPush),
       });
-      
-      if (!silent) {
-        alert("✅ Sincronización enviada con éxito.");
-      }
+      if (!silent) alert("✅ Nube actualizada.");
     } catch (e) {
-      console.error("Sync Error:", e);
-      if (!silent) {
-        alert("❌ Error al actualizar. Revisa la URL en Ajustes.");
-      }
+      console.error("Push Error:", e);
+      if (!silent) alert("❌ Error al subir datos.");
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // 2. Sincronización automática al abrir la app (una vez cargada la URL)
-  useEffect(() => {
-    const savedUrl = localStorage.getItem('brunance_sheets_url');
-    if (savedUrl) {
-      handleSync(undefined, true);
+  // Función para DESCARGAR datos (Pull)
+  const handlePull = async (silent: boolean = false) => {
+    if (!sheetsUrl) return;
+    setIsSyncing(true);
+    try {
+      const response = await fetch(sheetsUrl);
+      const remoteData = await response.json();
+      
+      if (Array.isArray(remoteData)) {
+        // Solo reemplazamos si el remoto tiene datos y el local está vacío, 
+        // o si es una sincronización manual solicitada
+        if (remoteData.length > 0 || !silent) {
+          setTransactions(remoteData);
+          if (!silent) alert(`✅ Se descargaron ${remoteData.length} registros.`);
+        }
+      }
+    } catch (e) {
+      console.error("Pull Error:", e);
+      if (!silent) alert("❌ Error al descargar datos. Revisa la URL.");
+    } finally {
+      setIsSyncing(false);
     }
-  }, []);
+  };
+
+  // Sincronización inteligente al iniciar
+  useEffect(() => {
+    if (isInitialized && sheetsUrl) {
+      if (transactions.length === 0) {
+        // Si no hay nada local, intentamos traer del Sheets
+        handlePull(true);
+      } else {
+        // Si hay algo local, nos aseguramos de que el Sheets esté al día
+        handlePush(transactions, true);
+      }
+    }
+  }, [isInitialized, sheetsUrl === '']); // Solo al inicio o cuando se configura la URL
 
   const handleAddTransaction = (t: Transaction) => {
     const newTransactions = [t, ...transactions];
     setTransactions(newTransactions);
     setView('history');
     setPrefill(null);
-    
-    // Auto-sync silencioso
-    if (sheetsUrl) {
-      handleSync(newTransactions, true);
-    }
+    handlePush(newTransactions, true); // Push automático
   };
 
   const handleDeleteTransaction = (id: string) => {
     if (window.confirm('¿Eliminar transacción?')) {
       const newTransactions = transactions.filter(t => t.id !== id);
       setTransactions(newTransactions);
-      
-      // Auto-sync silencioso
-      if (sheetsUrl) {
-        handleSync(newTransactions, true);
-      }
+      handlePush(newTransactions, true); // Push automático (incluso si queda vacía)
     }
   };
 
@@ -133,10 +146,9 @@ const App: React.FC = () => {
   };
 
   const handleClearData = () => {
-    if (window.confirm('¿Borrar todos los datos locales?')) {
+    if (window.confirm('¿Borrar todos los datos LOCALES? (El Excel se mantendrá intacto hasta la próxima sincronización)')) {
       setTransactions([]);
       localStorage.removeItem('brunance_transactions');
-      window.location.reload();
     }
   };
 
@@ -148,10 +160,10 @@ const App: React.FC = () => {
             <h1 className="font-black text-2xl tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-purple-500 to-teal-500">
               BRUNANCE
             </h1>
-            <p className="text-[7px] font-bold text-slate-400 uppercase tracking-[0.2em] leading-none mt-0.5 font-sans">V6.0 Smart Ledger</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase tracking-[0.2em] leading-none mt-0.5 font-sans">V6.2 Sync Pro</p>
           </div>
           <button 
-            onClick={() => handleSync(undefined, false)}
+            onClick={() => handlePush(transactions, false)}
             disabled={isSyncing}
             className={`p-2 rounded-xl transition-all active:scale-95 ${isSyncing ? 'bg-slate-100 text-indigo-400' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-100/50'}`}
           >
@@ -183,7 +195,8 @@ const App: React.FC = () => {
             onClear={handleClearData} 
             sheetsUrl={sheetsUrl} 
             setSheetsUrl={setSheetsUrl} 
-            onSync={() => handleSync(undefined, false)}
+            onSync={() => handlePush(transactions, false)}
+            onPull={() => handlePull(false)}
             isSyncing={isSyncing}
           />
         )}
