@@ -14,11 +14,11 @@ interface TransactionFormProps {
 
 type MainCategory = 'Efectivo' | 'Tarjeta' | 'Billetera' | 'Bancos';
 
-// Helper para formato de moneda consistente (Punto para miles, Coma para decimales)
+// Helper para formato de moneda consistente (Sin decimales para ahorrar espacio)
 const formatNum = (num: number) => {
   return new Intl.NumberFormat('es-AR', {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(num);
 };
 
@@ -277,7 +277,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
               inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="0,00"
+              placeholder="0"
               className={`w-full bg-white border-none rounded-2xl py-6 pl-10 pr-4 text-2xl font-black focus:ring-2 shadow-sm ${isInsufficientFunds ? 'text-red-600 focus:ring-red-500 bg-red-50' : 'text-slate-800 focus:ring-indigo-500'}`}
               required
             />
