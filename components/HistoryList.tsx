@@ -12,12 +12,8 @@ interface HistoryListProps {
 }
 
 const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => {
-  // Lógica robusta para encontrar cuentas ignorando mayúsculas/minúsculas/espacios
-  const findMethod = (id: string) => {
-    if (!id) return null;
-    const normalizedId = id.toString().trim().toLowerCase();
-    return PAYMENT_METHODS.find(m => m.id.toLowerCase().trim() === normalizedId);
-  };
+  // Revertido a búsqueda simple por ID
+  const findMethod = (id: string) => PAYMENT_METHODS.find(m => m.id === id);
 
   const sortedTransactions = [...transactions].sort((a, b) => 
     new Date(b.date).getTime() - new Date(a.date).getTime()

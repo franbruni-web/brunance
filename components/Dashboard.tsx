@@ -16,13 +16,8 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, onSettle, selectedMonth }) => {
   const [currencyView, setCurrencyView] = useState<Currency>('ARS');
 
-  // Lógica robusta para encontrar cuentas ignorando mayúsculas/minúsculas/espacios
-  // Esto soluciona el problema de Android vs iPhone
-  const findMethod = (id: string) => {
-    if (!id) return null;
-    const normalizedId = id.toString().trim().toLowerCase();
-    return PAYMENT_METHODS.find(m => m.id.toLowerCase().trim() === normalizedId);
-  };
+  // Revertido a búsqueda simple por ID (V4.5 Original)
+  const findMethod = (id: string) => PAYMENT_METHODS.find(m => m.id === id);
 
   const filteredByCurrency = useMemo(() => 
     transactions.filter(t => t.currency === currencyView),
@@ -31,7 +26,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
   const totalIncome = filteredByCurrency.filter(t => t.nature === 'Ingreso').reduce((acc, curr) => acc + curr.amount, 0);
   const totalExpense = filteredByCurrency.filter(t => t.nature === 'Gasto').reduce((acc, curr) => acc + curr.amount, 0);
 
-  // Saldos globales con normalización de ID
   const globalBalances = useMemo(() => {
     const data: Record<string, number> = {};
     const history = allTransactions.filter(t => t.currency === currencyView);
@@ -58,7 +52,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
         .filter(([_, val]) => Math.abs(val) > 0.01)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value);
-  }, [allTransactions, currencyView, findMethod]);
+  }, [allTransactions, currencyView]);
 
   const totalBalance = useMemo(() => {
     return allTransactions
