@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Transaction } from '../types';
-import { Download, Upload, Trash2, ShieldCheck, Database, FileSpreadsheet, ExternalLink, CloudUpload, Loader2, FileCode, Check, RefreshCcw } from 'lucide-react';
+import { Download, Upload, Trash2, ShieldCheck, Database, FileSpreadsheet, ExternalLink, CloudUpload, Loader2, FileCode, Check, RefreshCcw, Smartphone } from 'lucide-react';
 
 interface SettingsViewProps {
   transactions: Transaction[];
@@ -67,6 +67,21 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     navigator.clipboard.writeText(APPS_SCRIPT_CODE);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleForceUpdate = () => {
+    if (window.confirm('¿Actualizar Brunance? Se cerrará y volverá a abrir para cargar la última versión.')) {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const registration of registrations) {
+            registration.unregister();
+          }
+          window.location.reload();
+        });
+      } else {
+        window.location.reload();
+      }
+    }
   };
 
   return (
@@ -156,6 +171,28 @@ const SettingsView: React.FC<SettingsViewProps> = ({
           {copied ? <Check size={16} /> : <FileCode size={16} />}
           {copied ? '¡Copiado!' : 'Copiar Nuevo Código'}
         </button>
+      </div>
+
+      {/* Sistema y Versión */}
+      <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+        <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+          <Smartphone size={18} className="text-slate-600" />
+          Sistema y Versión
+        </h3>
+        <div className="flex items-center justify-between mb-4 px-1">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Brunance v6.3</span>
+          <span className="text-[10px] font-black text-green-500 uppercase bg-green-50 px-2 py-0.5 rounded-full">Estable</span>
+        </div>
+        <button 
+          onClick={handleForceUpdate}
+          className="w-full flex items-center justify-center gap-3 p-4 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-2xl transition-all active:scale-95 border border-slate-100"
+        >
+          <RefreshCcw size={18} />
+          <span className="text-xs font-black uppercase tracking-tight">Actualizar a última versión</span>
+        </button>
+        <p className="text-[9px] text-slate-400 mt-3 text-center leading-tight px-4">
+          Si notas errores o la app no se actualiza, usa este botón para forzar la recarga en iOS.
+        </p>
       </div>
 
       <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
