@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend 
@@ -6,7 +5,6 @@ import {
 import { Transaction, Payer, Currency } from '../types';
 import { PAYMENT_METHODS } from '../constants';
 import { Wallet, TrendingUp, Users, ArrowUpCircle, ArrowDownCircle, CheckCircle } from 'lucide-react';
-// Added missing imports for date formatting
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -20,18 +18,18 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, onSettle, selectedMonth }) => {
   const [currencyView, setCurrencyView] = useState<Currency>('ARS');
 
+  // Transacciones del mes para Ingresos/Gastos
   const filteredByCurrency = useMemo(() => 
     transactions.filter(t => t.currency === currencyView),
   [transactions, currencyView]);
 
-  const incomes = filteredByCurrency.filter(t => t.nature === 'Ingreso');
-  const expenses = filteredByCurrency.filter(t => t.nature === 'Gasto');
+  const monthlyIncomes = filteredByCurrency.filter(t => t.nature === 'Ingreso');
+  const monthlyExpenses = filteredByCurrency.filter(t => t.nature === 'Gasto');
 
-  const totalIncome = incomes.reduce((acc, curr) => acc + curr.amount, 0);
-  const totalExpense = expenses.reduce((acc, curr) => acc + curr.amount, 0);
-  const balance = totalIncome - totalExpense;
+  const totalIncome = monthlyIncomes.reduce((acc, curr) => acc + curr.amount, 0);
+  const totalExpense = monthlyExpenses.reduce((acc, curr) => acc + curr.amount, 0);
 
-  // Saldos globales por cuenta (Dinero Real Actual)
+  // Saldos globales por cuenta (Dinero Real Actual - Arrastra meses anteriores)
   const globalBalances = useMemo(() => {
     const data: Record<string, number> = {};
     allTransactions.filter(t => t.currency === currencyView).forEach(t => {
@@ -52,27 +50,29 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
         .map(([name, value]) => ({ name, value }));
   }, [allTransactions, currencyView]);
 
+  // El Saldo Disponible es la suma de todos los saldos de cuentas (Acumulado Real)
+  const totalBalance = useMemo(() => {
+    return globalBalances.reduce((acc, curr) => acc + curr.value, 0);
+  }, [globalBalances]);
+
   // Lógica de Deuda Corregida (Incluye Liquidaciones)
   const debtInfo = useMemo(() => {
     const sharedExpenses = filteredByCurrency.filter(e => e.type === 'Familiar' && e.nature === 'Gasto');
     const settlements = filteredByCurrency.filter(e => e.nature === 'Transferencia' && e.isSettlement);
 
-    // Lo que cada uno pagó por la familia en este mes
     const franPaidShared = sharedExpenses.filter(e => e.payer === 'Fran').reduce((a, b) => a + b.amount, 0);
     const carPaidShared = sharedExpenses.filter(e => e.payer === 'Car').reduce((a, b) => a + b.amount, 0);
 
-    // Transferencias de liquidación ya realizadas este mes
     const franSettledToCar = settlements.filter(s => s.payer === 'Fran').reduce((a, b) => a + b.amount, 0);
     const carSettledToFran = settlements.filter(s => s.payer === 'Car').reduce((a, b) => a + b.amount, 0);
 
     const totalShared = franPaidShared + carPaidShared;
     const targetPerPerson = totalShared / 2;
 
-    // Balance neto: (Lo que pagué + lo que liquidé al otro) - Lo que el otro liquidó a mi
     const netFran = (franPaidShared + franSettledToCar) - carSettledToFran;
     const netCar = (carPaidShared + carSettledToFran) - franSettledToCar;
 
-    const diff = netFran - targetPerPerson; // Si es positivo, Fran pagó de más. Si negativo, debe.
+    const diff = netFran - targetPerPerson; 
 
     if (Math.abs(diff) < 1) return { from: null, to: null, amount: 0, text: 'Están a mano' };
 
@@ -124,8 +124,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
       <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl">
         <div className="flex justify-between items-start mb-6">
             <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mb-1">Saldo Disponible ({currencyView})</p>
-                <h2 className="text-4xl font-extrabold">${balance.toLocaleString()}</h2>
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mb-1">Disponible Total ({currencyView})</p>
+                <h2 className="text-4xl font-extrabold">${totalBalance.toLocaleString()}</h2>
+                <p className="text-[9px] opacity-40 mt-1 uppercase font-bold tracking-tight">* Incluye remanente de meses anteriores</p>
             </div>
             <div className="bg-white/10 p-2 rounded-xl">
                 <Wallet size={24} />
@@ -136,14 +137,14 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
             <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-3">
                 <div className="flex items-center gap-1.5 text-green-400 mb-1">
                     <ArrowUpCircle size={14} />
-                    <span className="text-[10px] font-bold uppercase">Ingresos</span>
+                    <span className="text-[10px] font-bold uppercase">Mes: Ingresos</span>
                 </div>
                 <div className="text-lg font-bold">${totalIncome.toLocaleString()}</div>
             </div>
             <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3">
                 <div className="flex items-center gap-1.5 text-red-400 mb-1">
                     <ArrowDownCircle size={14} />
-                    <span className="text-[10px] font-bold uppercase">Gastos</span>
+                    <span className="text-[10px] font-bold uppercase">Mes: Gastos</span>
                 </div>
                 <div className="text-lg font-bold">${totalExpense.toLocaleString()}</div>
             </div>
@@ -157,7 +158,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
                     <Users size={20} />
                 </div>
                 <div>
-                    <p className="text-[10px] font-bold text-indigo-400 uppercase">Resumen Familiar ({currencyView})</p>
+                    <p className="text-[10px] font-bold text-indigo-400 uppercase">Liquidación Familiar ({currencyView})</p>
                     <p className="text-sm font-bold text-indigo-900">{debtInfo.text}</p>
                 </div>
             </div>
@@ -179,7 +180,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
       <div className="bg-white rounded-3xl p-6 shadow-sm">
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
             <TrendingUp size={18} className="text-teal-600" />
-            Cuentas ({currencyView})
+            Saldos Actuales ({currencyView})
         </h3>
         <div className="space-y-3">
             {globalBalances.map(item => (
