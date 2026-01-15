@@ -15,7 +15,7 @@ interface HistoryListProps {
 const formatNum = (num: number) => {
   return new Intl.NumberFormat('es-AR', {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(num);
 };
 
