@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, ShieldCheck, CloudDownload } from 'lucide-react';
 import TransactionForm from './components/ExpenseForm';
 import HistoryList from './components/HistoryList';
@@ -11,14 +11,20 @@ import { es } from 'date-fns/locale';
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'stats' | 'settings'>('add');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [sheetsUrl, setSheetsUrl] = useState<string>(localStorage.getItem('brunance_sheets_url') || '');
   
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [prefillTransaction, setPrefillTransaction] = useState<Partial<Transaction> | undefined>(undefined);
+  
+  const hasAutoSynced = useRef(false);
 
+  // Carga inicial
   useEffect(() => {
     const saved = localStorage.getItem('brunance_transactions_v3');
+    const savedDeleted = localStorage.getItem('brunance_deleted_ids');
+    
     if (saved) {
       try {
         setTransactions(JSON.parse(saved));
@@ -26,11 +32,23 @@ const App: React.FC = () => {
         console.error("Failed to load transactions", e);
       }
     }
+    if (savedDeleted) {
+      try {
+        setDeletedIds(JSON.parse(savedDeleted));
+      } catch (e) {
+        console.error("Failed to load deleted ids", e);
+      }
+    }
   }, []);
 
+  // Persistencia local
   useEffect(() => {
     localStorage.setItem('brunance_transactions_v3', JSON.stringify(transactions));
   }, [transactions]);
+
+  useEffect(() => {
+    localStorage.setItem('brunance_deleted_ids', JSON.stringify(deletedIds));
+  }, [deletedIds]);
 
   useEffect(() => {
     localStorage.setItem('brunance_sheets_url', sheetsUrl);
@@ -44,19 +62,21 @@ const App: React.FC = () => {
 
   const deleteTransaction = (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
+    setDeletedIds(prev => [...prev, id]);
   };
 
-  const handleSync = async () => {
+  const handleSync = async (isAuto = false) => {
     if (!sheetsUrl) {
-      alert("Configura la URL de Brunance Sheets en Ajustes.");
-      setActiveTab('settings');
+      if (!isAuto) {
+        alert("Configura la URL de Brunance Sheets en Ajustes.");
+        setActiveTab('settings');
+      }
       return;
     }
 
     setIsSyncing(true);
     try {
-      // 1. Intentar descargar datos actuales de la nube (GET)
-      // Nota: Google Apps Script requiere que la URL termine en /exec o similar
+      // 1. Descargar datos actuales de la nube
       const response = await fetch(sheetsUrl);
       let remoteData: Transaction[] = [];
       
@@ -65,13 +85,17 @@ const App: React.FC = () => {
         try {
           remoteData = JSON.parse(text);
         } catch (e) {
-          console.log("No hay datos previos en la nube o formato inválido.");
+          console.log("Nube vacía o formato inválido.");
         }
       }
 
-      // 2. Combinar datos locales con remotos evitando duplicados por ID
+      // 2. MERGE INTELIGENTE
+      // a) Eliminar de los datos remotos lo que nosotros ya borramos localmente
+      const filteredRemote = remoteData.filter(rt => !deletedIds.includes(rt.id));
+      
+      // b) Combinar con los locales (evitando duplicados)
       const localMap = new Map(transactions.map(t => [t.id, t]));
-      remoteData.forEach(rt => {
+      filteredRemote.forEach(rt => {
         if (!localMap.has(rt.id)) {
           localMap.set(rt.id, rt);
         }
@@ -89,15 +113,31 @@ const App: React.FC = () => {
         body: JSON.stringify(mergedData),
       });
       
+      // 4. Actualizar estado y LIMPIAR lista de borrados solo si tuvo éxito
       setTransactions(mergedData.map(t => ({ ...t, synced: true })));
-      alert("Brunance: Nube y Celular sincronizados.");
+      setDeletedIds([]);
+      localStorage.removeItem('brunance_deleted_ids');
+      
+      if (!isAuto) alert("Brunance: Nube y Celular sincronizados.");
     } catch (error) {
       console.error("Sync error:", error);
-      alert("Error en la sincronización. Verifica la URL y permisos.");
+      if (!isAuto) alert("Error en la sincronización. Verifica la URL.");
     } finally {
       setIsSyncing(false);
     }
   };
+
+  // Auto-Sync al abrir la app
+  useEffect(() => {
+    if (sheetsUrl && !hasAutoSynced.current) {
+        // Pequeño delay para que la UI cargue primero
+        const timer = setTimeout(() => {
+            handleSync(true);
+            hasAutoSynced.current = true;
+        }, 1500);
+        return () => clearTimeout(timer);
+    }
+  }, [sheetsUrl]);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -131,7 +171,6 @@ const App: React.FC = () => {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
       var headerName = headers[j].toLowerCase();
-      // Mapeo simple de vuelta a las keys de Brunance
       if (headerName === 'identificador') headerName = 'id';
       obj[headerName] = data[i][j];
     }
@@ -151,7 +190,7 @@ function doPost(e) {
   return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
 }`;
     navigator.clipboard.writeText(code);
-    alert("Código Brunance Full-Sync copiado. Recuerda publicarlo como 'Cualquier persona'!");
+    alert("Código Brunance Full-Sync copiado.");
   };
 
   return (
@@ -164,9 +203,10 @@ function doPost(e) {
             </h1>
             <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">Fran & Car Personal Finance</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+                {isSyncing && <span className="text-[8px] font-black text-teal-600 animate-pulse uppercase tracking-widest">Sincronizando</span>}
                 <button 
-                    onClick={handleSync}
+                    onClick={() => handleSync(false)}
                     disabled={isSyncing}
                     className={`p-2.5 rounded-2xl transition-all shadow-sm ${isSyncing ? 'bg-teal-50 text-teal-600 animate-spin' : 'bg-slate-800 text-white hover:bg-teal-600'}`}
                     title="Sincronizar Nube"
@@ -261,16 +301,13 @@ function doPost(e) {
                             <Copy size={14} /> Copiar Nuevo Código (Merge)
                         </button>
                         <button 
-                            onClick={handleSync}
+                            onClick={() => handleSync(false)}
                             disabled={isSyncing}
                             className="w-full flex items-center justify-center gap-2 py-3 bg-white text-teal-600 border border-teal-200 text-xs font-black rounded-xl hover:bg-teal-50 transition-colors"
                         >
                             <CloudDownload size={14} /> Forzar Sincronización Total
                         </button>
                     </div>
-                    <p className="text-[9px] text-teal-700 font-medium leading-tight">
-                        * El nuevo código permite "bajar" datos. Si ya tenías un script, debes reemplazarlo por este y volver a Implementar.
-                    </p>
                 </div>
 
                 <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
@@ -278,11 +315,15 @@ function doPost(e) {
                     <div className="space-y-3">
                         <div className="flex justify-between text-xs py-1 border-b border-slate-50">
                             <span className="text-slate-500 font-medium">Build</span>
-                            <span className="font-black text-slate-800">4.1.0 Cloud-Merge</span>
+                            <span className="font-black text-slate-800">4.2.0 Auto-Sync + Tombstones</span>
                         </div>
                         <div className="flex justify-between text-xs py-1 border-b border-slate-50">
                             <span className="text-slate-500 font-medium">Registros</span>
                             <span className="font-black text-slate-800">{transactions.length}</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] py-1 border-b border-slate-50">
+                            <span className="text-slate-400 font-medium italic">Pendientes de borrar en nube</span>
+                            <span className="font-black text-red-400">{deletedIds.length}</span>
                         </div>
                     </div>
                 </div>
@@ -291,7 +332,9 @@ function doPost(e) {
                   onClick={() => {
                     if(confirm('¿Seguro quieres borrar los datos locales de Brunance?')) {
                       setTransactions([]);
+                      setDeletedIds([]);
                       localStorage.removeItem('brunance_transactions_v3');
+                      localStorage.removeItem('brunance_deleted_ids');
                       window.location.reload();
                     }
                   }}
