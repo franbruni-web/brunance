@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend 
@@ -29,31 +30,46 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
   const totalIncome = monthlyIncomes.reduce((acc, curr) => acc + curr.amount, 0);
   const totalExpense = monthlyExpenses.reduce((acc, curr) => acc + curr.amount, 0);
 
-  // Saldos globales por cuenta (Dinero Real Actual - Arrastra meses anteriores)
+  // Saldos por cuenta con fallback para IDs desconocidos
   const globalBalances = useMemo(() => {
     const data: Record<string, number> = {};
-    allTransactions.filter(t => t.currency === currencyView).forEach(t => {
+    const history = allTransactions.filter(t => t.currency === currencyView);
+
+    history.forEach(t => {
         if (t.nature === 'Transferencia') {
           const fromMethod = PAYMENT_METHODS.find(m => m.id === t.paymentMethodId);
-          if (fromMethod) data[fromMethod.name] = (data[fromMethod.name] || 0) - t.amount;
+          const fromName = fromMethod ? fromMethod.name : `Cuenta Desconocida (${t.paymentMethodId})`;
+          data[fromName] = (data[fromName] || 0) - t.amount;
+
           const toMethod = t.toPaymentMethodId ? PAYMENT_METHODS.find(m => m.id === t.toPaymentMethodId) : null;
-          if (toMethod) data[toMethod.name] = (data[toMethod.name] || 0) + t.amount;
+          if (toMethod || t.toPaymentMethodId) {
+            const toName = toMethod ? toMethod.name : `Cuenta Desconocida (${t.toPaymentMethodId})`;
+            data[toName] = (data[toName] || 0) + t.amount;
+          }
         } else {
           const method = PAYMENT_METHODS.find(m => m.id === t.paymentMethodId);
-          if (!method) return;
+          const name = method ? method.name : "Otras Cuentas / Legacy";
           const value = t.nature === 'Ingreso' ? t.amount : -t.amount;
-          data[method.name] = (data[method.name] || 0) + value;
+          data[name] = (data[name] || 0) + value;
         }
     });
+
     return Object.entries(data)
-        .filter(([_, val]) => val !== 0)
-        .map(([name, value]) => ({ name, value }));
+        .filter(([_, val]) => Math.abs(val) > 0.01)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
   }, [allTransactions, currencyView]);
 
-  // El Saldo Disponible es la suma de todos los saldos de cuentas (Acumulado Real)
+  // El Saldo Disponible es el acumulado histórico puro (Ingresos - Gastos)
   const totalBalance = useMemo(() => {
-    return globalBalances.reduce((acc, curr) => acc + curr.value, 0);
-  }, [globalBalances]);
+    return allTransactions
+      .filter(t => t.currency === currencyView)
+      .reduce((acc, t) => {
+        if (t.nature === 'Ingreso') return acc + t.amount;
+        if (t.nature === 'Gasto') return acc - t.amount;
+        return acc; // Transferencias no afectan el saldo total de la moneda
+      }, 0);
+  }, [allTransactions, currencyView]);
 
   // Lógica de Deuda Corregida (Incluye Liquidaciones)
   const debtInfo = useMemo(() => {
