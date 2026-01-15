@@ -42,6 +42,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
     }
   }, [amount]);
 
+  const addOperator = (op: string) => {
+    setAmount(prev => prev + op);
+  };
+
   const accountBalances = useMemo(() => {
     const balances: Record<string, number> = {};
     allTransactions.filter(t => t.currency === currency).forEach(t => {
@@ -204,13 +208,28 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
         ))}
       </div>
 
-      {/* Monto y Moneda con Calculadora */}
+      {/* Monto y Moneda con Calculadora y Teclado Numérico */}
       <div className="grid grid-cols-4 gap-3">
         <div className="col-span-3 relative">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block flex items-center gap-1.5">
-            <Calculator size={12} className="text-teal-600" />
-            Monto / Calculadora
-          </label>
+          <div className="flex justify-between items-end mb-1">
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block flex items-center gap-1.5">
+              <Calculator size={12} className="text-teal-600" />
+              Monto
+            </label>
+            {/* Barra de Operadores para compensar el teclado numérico */}
+            <div className="flex gap-1">
+              {['+', '-', '*', '/'].map(op => (
+                <button
+                  key={op}
+                  type="button"
+                  onClick={() => addOperator(op)}
+                  className="bg-slate-100 text-slate-600 w-6 h-6 flex items-center justify-center rounded-md text-xs font-black active:bg-teal-500 active:text-white transition-colors"
+                >
+                  {op}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="relative flex flex-col">
               <div className="relative flex items-center">
                   <span className={`absolute left-4 text-2xl font-bold ${
@@ -218,7 +237,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
                   }`}>$</span>
                   <input
                       type="text"
-                      inputMode="text"
+                      inputMode="decimal"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                       placeholder="0.00"
@@ -490,4 +509,3 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onAdd, prefill, allTr
 };
 
 export default TransactionForm;
-
