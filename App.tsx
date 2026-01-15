@@ -160,7 +160,7 @@ const App: React.FC = () => {
             <h1 className="font-black text-2xl tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-purple-500 to-teal-500">
               BRUNANCE
             </h1>
-            <p className="text-[7px] font-bold text-slate-400 uppercase tracking-[0.2em] leading-none mt-0.5 font-sans">V6.2 Sync Pro</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase tracking-[0.2em] leading-none mt-0.5 font-sans">V6.3 iOS Ready</p>
           </div>
           <button 
             onClick={() => handlePush(transactions, false)}
