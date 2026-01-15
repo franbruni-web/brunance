@@ -153,8 +153,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col max-w-md mx-auto h-screen overflow-hidden border-x border-slate-200">
-      <header className="bg-white border-b px-4 py-4 flex items-center justify-between shadow-sm z-20">
+    <div className="flex flex-col max-w-md mx-auto h-[100dvh] w-full overflow-hidden border-x border-slate-200 bg-slate-50">
+      <header className="bg-white border-b px-4 py-4 flex items-center justify-between shadow-sm z-20 shrink-0">
         <div className="flex items-center gap-3">
           <div>
             <h1 className="font-black text-2xl tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-purple-500 to-teal-500">
@@ -184,7 +184,7 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden relative bg-slate-50">
+      <main className="flex-1 overflow-hidden relative bg-slate-50 min-h-0">
         {view === 'add' && <TransactionForm onAdd={handleAddTransaction} allTransactions={transactions} prefill={prefill || undefined} onCancelPrefill={handleCancelPrefill} />}
         {view === 'history' && <HistoryList transactions={filteredTransactions} onDelete={handleDeleteTransaction} currentMonth={selectedMonth} />}
         {view === 'dashboard' && <Dashboard transactions={filteredTransactions} allTransactions={transactions} onSettle={handleSettle} selectedMonth={selectedMonth} />}
@@ -202,7 +202,7 @@ const App: React.FC = () => {
         )}
       </main>
 
-      <nav className="bg-white border-t flex justify-around items-center py-2 pb-safe shadow-[0_-4px_12px_rgba(0,0,0,0.03)] z-20">
+      <nav className="bg-white border-t flex justify-around items-center py-2 pb-safe shadow-[0_-4px_12px_rgba(0,0,0,0.03)] z-20 shrink-0">
         <button onClick={() => setView('add')} className={`flex flex-col items-center flex-1 py-1 transition-all ${view === 'add' ? 'text-indigo-600' : 'text-slate-300'}`}>
           <div className={`p-2 rounded-full -mt-6 mb-1 shadow-lg transition-all ${view === 'add' ? 'bg-indigo-600 text-white scale-110' : 'bg-white text-slate-400 border border-slate-100'}`}>
             <PlusCircle size={24} />
