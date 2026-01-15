@@ -17,6 +17,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
   const [currencyView, setCurrencyView] = useState<Currency>('ARS');
 
   // Lógica robusta para encontrar cuentas ignorando mayúsculas/minúsculas/espacios
+  // Esto soluciona el problema de Android vs iPhone
   const findMethod = (id: string) => {
     if (!id) return null;
     const normalizedId = id.toString().trim().toLowerCase();
@@ -57,7 +58,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
         .filter(([_, val]) => Math.abs(val) > 0.01)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value);
-  }, [allTransactions, currencyView]);
+  }, [allTransactions, currencyView, findMethod]);
 
   const totalBalance = useMemo(() => {
     return allTransactions
@@ -90,13 +91,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
   }, [filteredByCurrency]);
 
   return (
-    <div className="pb-24 p-4 space-y-4 overflow-y-auto h-full no-scrollbar">
-      <div className="flex bg-slate-200/50 p-1 rounded-xl w-fit mx-auto">
+    <div className="pb-24 p-5 space-y-5 overflow-y-auto h-full no-scrollbar">
+      <div className="flex bg-slate-200/50 p-1 rounded-xl w-fit mx-auto border border-slate-200">
         {(['ARS', 'USD'] as Currency[]).map((c) => (
           <button
             key={c}
             onClick={() => setCurrencyView(c)}
-            className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
               currencyView === c ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'
             }`}
           >
@@ -105,29 +106,39 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
         ))}
       </div>
 
-      <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-lg">
-        <p className="text-[10px] font-bold uppercase opacity-50 mb-1">Saldo Total</p>
-        <h2 className="text-3xl font-black">${totalBalance.toLocaleString()}</h2>
+      <div className="bg-slate-900 rounded-3xl p-7 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+        <p className="text-[10px] font-bold uppercase opacity-50 mb-1 tracking-widest">Saldo Disponible</p>
+        <h2 className="text-4xl font-black italic tracking-tighter">${totalBalance.toLocaleString()}</h2>
         
-        <div className="grid grid-cols-2 gap-4 mt-6">
-          <div>
-            <p className="text-[10px] text-green-400 font-bold uppercase mb-1">Ingresos</p>
-            <p className="text-lg font-bold">${totalIncome.toLocaleString()}</p>
+        <div className="grid grid-cols-2 gap-4 mt-8">
+          <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
+            <p className="text-[10px] text-green-400 font-black uppercase mb-1 flex items-center gap-1.5">
+              <ArrowUpCircle size={12} /> Ingresos
+            </p>
+            <p className="text-xl font-bold">${totalIncome.toLocaleString()}</p>
           </div>
-          <div>
-            <p className="text-[10px] text-red-400 font-bold uppercase mb-1">Gastos</p>
-            <p className="text-lg font-bold">${totalExpense.toLocaleString()}</p>
+          <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
+            <p className="text-[10px] text-red-400 font-black uppercase mb-1 flex items-center gap-1.5">
+              <ArrowDownCircle size={12} /> Gastos
+            </p>
+            <p className="text-xl font-bold">${totalExpense.toLocaleString()}</p>
           </div>
         </div>
       </div>
 
-      <div className="bg-indigo-600 rounded-2xl p-5 text-white shadow-md flex justify-between items-center">
-        <div>
-          <p className="text-[10px] font-bold uppercase opacity-70 mb-1">Balance de Pareja</p>
-          <p className="text-sm font-bold">{debtInfo.text}</p>
+      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex justify-between items-center group active:scale-[0.98] transition-all">
+        <div className="flex items-center gap-4">
+          <div className="bg-indigo-600 text-white p-3 rounded-2xl shadow-lg shadow-indigo-100">
+            <Users size={20} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-400 tracking-tight">Balance de Pareja</p>
+            <p className="text-sm font-black text-slate-800">{debtInfo.text}</p>
+          </div>
         </div>
         <div className="text-right">
-          <p className="text-xl font-black">${Math.round(debtInfo.amount).toLocaleString()}</p>
+          <p className="text-2xl font-black text-indigo-600 tracking-tighter">${Math.round(debtInfo.amount).toLocaleString()}</p>
           {debtInfo.amount > 0 && (
             <button 
               onClick={() => onSettle({
@@ -138,7 +149,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
                 description: `Saldar cuentas ${format(selectedMonth, 'MMMM', { locale: es })}`,
                 isSettlement: true
               })}
-              className="text-[10px] font-bold underline opacity-80"
+              className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg mt-1"
             >
               Saldar ahora
             </button>
@@ -146,17 +157,26 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, allTransactions, on
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Saldos por cuenta</h3>
-        <div className="space-y-3">
+      <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+            <TrendingUp size={16} className="text-teal-500" />
+            Cuentas ({currencyView})
+          </h3>
+        </div>
+        <div className="space-y-4">
           {globalBalances.map(item => (
-            <div key={item.name} className="flex justify-between items-center py-1 border-b border-slate-50 last:border-0">
-              <span className="text-sm font-medium text-slate-600">{item.name}</span>
-              <span className={`text-sm font-bold ${item.value >= 0 ? 'text-slate-900' : 'text-red-500'}`}>
-                ${Math.round(item.value).toLocaleString()}
-              </span>
+            <div key={item.name} className="flex justify-between items-center group">
+              <span className="text-sm font-bold text-slate-500 group-hover:text-slate-800 transition-colors">{item.name}</span>
+              <div className="flex flex-col items-end">
+                <span className={`text-sm font-black tracking-tight ${item.value >= 0 ? 'text-slate-900' : 'text-red-500'}`}>
+                  ${Math.round(item.value).toLocaleString()}
+                </span>
+                <div className={`h-1 w-8 rounded-full mt-1 ${item.value >= 0 ? 'bg-slate-100' : 'bg-red-50'}`}></div>
+              </div>
             </div>
           ))}
+          {globalBalances.length === 0 && <p className="text-center text-[10px] text-slate-400 uppercase py-4">Sin actividad este mes</p>}
         </div>
       </div>
     </div>
