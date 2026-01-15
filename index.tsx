@@ -1,27 +1,32 @@
-
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 
-console.log("🚀 Brunance: Iniciando proceso de montaje...");
+console.log("🚀 Brunance: Iniciando montaje...");
 
 const rootElement = document.getElementById('root');
 
 if (rootElement) {
-  try {
-    const root = createRoot(rootElement);
-    root.render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>
-    );
-    console.log("✅ Brunance: Aplicación montada.");
-  } catch (error: any) {
-    console.error("❌ Brunance: Error en el renderizado:", error);
-    const errorDiv = document.getElementById('error-logger');
-    if (errorDiv) {
-      errorDiv.style.display = 'block';
-      errorDiv.innerHTML = `<b>Error fatal al cargar la app:</b> ${error.message || error}`;
+  const root = createRoot(rootElement);
+  
+  const renderApp = () => {
+    try {
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>
+      );
+      console.log("✅ Brunance: Renderizado completado.");
+    } catch (error: any) {
+      console.error("❌ Brunance: Error crítico:", error);
+      const logger = document.getElementById('error-logger');
+      if (logger) {
+        logger.style.display = 'block';
+        logger.innerHTML = `<b>Error al iniciar Brunance:</b> ${error.message}`;
+      }
     }
-  }
+  };
+
+  // Pequeño delay para estabilidad en PWA
+  setTimeout(renderApp, 0);
 }
