@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, ShieldCheck, CloudDownload, Zap } from 'lucide-react';
+import { PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, ShieldCheck, CloudDownload, Zap, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import TransactionForm from './components/ExpenseForm';
 import HistoryList from './components/HistoryList';
 import Dashboard from './components/Dashboard';
@@ -8,13 +8,16 @@ import { Transaction } from './types';
 import { format, addMonths, subMonths, endOfMonth, isWithinInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-const APP_VERSION = "4.4.0 RealTime-Sync";
+const APP_VERSION = "4.5.0 Calculator-Sync-Toast";
+
+type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'stats' | 'settings'>('add');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [sheetsUrl, setSheetsUrl] = useState<string>(localStorage.getItem('brunance_sheets_url') || '');
   
   const [selectedMonth, setSelectedMonth] = useState(new Date());
@@ -56,7 +59,7 @@ const App: React.FC = () => {
     localStorage.setItem('brunance_sheets_url', sheetsUrl);
   }, [sheetsUrl]);
 
-  // Lógica de Sincronización Refactorizada para soportar updates en tiempo real
+  // Lógica de Sincronización con Feedback Visual (Toast)
   const handleSync = async (isAuto = false, overrideTransactions?: Transaction[], overrideDeletedIds?: string[]) => {
     if (!sheetsUrl) {
       if (!isAuto) {
@@ -66,11 +69,12 @@ const App: React.FC = () => {
       return;
     }
 
-    // Usamos los datos pasados por parámetro o los del estado actual
     const currentTxs = overrideTransactions || transactions;
     const currentDeleted = overrideDeletedIds || deletedIds;
 
     setIsSyncing(true);
+    setSyncStatus('syncing');
+
     try {
       const response = await fetch(sheetsUrl);
       let remoteData: Transaction[] = [];
@@ -84,10 +88,8 @@ const App: React.FC = () => {
         }
       }
 
-      // Filtrar lo que viene de la nube con los IDs borrados (locales y remotos)
       const filteredRemote = remoteData.filter(rt => !currentDeleted.includes(rt.id));
       
-      // Combinar con los locales actuales
       const localMap = new Map(currentTxs.map(t => [t.id, t]));
       filteredRemote.forEach(rt => {
         if (!localMap.has(rt.id)) {
@@ -99,7 +101,6 @@ const App: React.FC = () => {
         new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
-      // Subir a la nube
       await fetch(sheetsUrl, {
         method: 'POST',
         mode: 'no-cors',
@@ -107,15 +108,16 @@ const App: React.FC = () => {
         body: JSON.stringify(mergedData),
       });
       
-      // Actualizar estados finales
       setTransactions(mergedData.map(t => ({ ...t, synced: true })));
       setDeletedIds([]);
       localStorage.removeItem('brunance_deleted_ids');
       
-      if (!isAuto) console.log("Brunance: Sincronización exitosa.");
+      setSyncStatus('success');
+      setTimeout(() => setSyncStatus('idle'), 3000);
     } catch (error) {
       console.error("Sync error:", error);
-      if (!isAuto) alert("Error en la sincronización. Verifica la URL.");
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('idle'), 5000);
     } finally {
       setIsSyncing(false);
     }
@@ -126,19 +128,14 @@ const App: React.FC = () => {
     setTransactions(nextTransactions);
     setPrefillTransaction(undefined);
     setActiveTab('list');
-    
-    // Disparar sincronización inmediata
     handleSync(true, nextTransactions);
   };
 
   const deleteTransaction = (id: string) => {
     const nextTransactions = transactions.filter(t => t.id !== id);
     const nextDeletedIds = [...deletedIds, id];
-    
     setTransactions(nextTransactions);
     setDeletedIds(nextDeletedIds);
-
-    // Disparar sincronización inmediata
     handleSync(true, nextTransactions, nextDeletedIds);
   };
 
@@ -218,6 +215,25 @@ function doPost(e) {
 
   return (
     <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-50 overflow-hidden relative">
+      {/* Toast de Sincronización */}
+      {syncStatus !== 'idle' && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in zoom-in slide-in-from-top-4 duration-300">
+          <div className={`px-4 py-2 rounded-full shadow-2xl border flex items-center gap-3 backdrop-blur-md ${
+            syncStatus === 'syncing' ? 'bg-indigo-600/90 text-white border-indigo-400' :
+            syncStatus === 'success' ? 'bg-teal-600/90 text-white border-teal-400' :
+            'bg-red-600/90 text-white border-red-400'
+          }`}>
+            {syncStatus === 'syncing' && <Loader2 size={16} className="animate-spin" />}
+            {syncStatus === 'success' && <CheckCircle2 size={16} />}
+            {syncStatus === 'error' && <AlertCircle size={16} />}
+            <span className="text-[10px] font-black uppercase tracking-widest">
+              {syncStatus === 'syncing' ? 'Sincronizando...' : 
+               syncStatus === 'success' ? 'Datos al día' : 'Error de Sync'}
+            </span>
+          </div>
+        </div>
+      )}
+
       <header className="px-6 pt-6 pb-2 bg-white border-b border-slate-100 shrink-0">
         <div className="flex justify-between items-center mb-4">
             <div>
@@ -227,16 +243,10 @@ function doPost(e) {
             <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">Fran & Car Personal Finance</p>
             </div>
             <div className="flex gap-2 items-center">
-                {isSyncing && (
-                  <div className="flex items-center gap-1 bg-teal-50 px-2 py-1 rounded-lg">
-                    <div className="w-1 h-1 bg-teal-600 rounded-full animate-ping" />
-                    <span className="text-[8px] font-black text-teal-600 uppercase tracking-widest">Nube</span>
-                  </div>
-                )}
                 <button 
                     onClick={() => handleSync(false)}
                     disabled={isSyncing}
-                    className={`p-2.5 rounded-2xl transition-all shadow-sm ${isSyncing ? 'bg-teal-50 text-teal-600 animate-spin' : 'bg-slate-800 text-white hover:bg-teal-600'}`}
+                    className={`p-2.5 rounded-2xl transition-all shadow-sm ${isSyncing ? 'bg-indigo-50 text-indigo-600 animate-spin' : 'bg-slate-800 text-white hover:bg-teal-600'}`}
                     title="Sincronizar Nube"
                 >
                     <RefreshCw size={20} />
@@ -367,8 +377,9 @@ function doPost(e) {
                         </div>
                         <div className="flex justify-between text-[10px] py-1 border-b border-slate-50">
                             <span className="text-slate-400 font-medium italic">Estado Sync</span>
-                            <span className={`font-black ${isSyncing ? 'text-teal-600 animate-pulse' : 'text-slate-800'}`}>
-                                {isSyncing ? 'Subiendo...' : 'Al día'}
+                            <span className={`font-black ${syncStatus === 'syncing' ? 'text-indigo-600 animate-pulse' : 'text-slate-800'}`}>
+                                {syncStatus === 'syncing' ? 'Subiendo...' : 
+                                 syncStatus === 'error' ? 'Fallo' : 'Al día'}
                             </span>
                         </div>
                     </div>
