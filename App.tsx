@@ -8,7 +8,7 @@ import { Transaction } from './types';
 import { format, addMonths, subMonths, endOfMonth, isWithinInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-const APP_VERSION = "4.3.0 iOS-Sync";
+const APP_VERSION = "4.4.0 RealTime-Sync";
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'stats' | 'settings'>('add');
@@ -56,18 +56,8 @@ const App: React.FC = () => {
     localStorage.setItem('brunance_sheets_url', sheetsUrl);
   }, [sheetsUrl]);
 
-  const addTransaction = (newTransaction: Transaction) => {
-    setTransactions(prev => [newTransaction, ...prev]);
-    setPrefillTransaction(undefined);
-    setActiveTab('list');
-  };
-
-  const deleteTransaction = (id: string) => {
-    setTransactions(prev => prev.filter(t => t.id !== id));
-    setDeletedIds(prev => [...prev, id]);
-  };
-
-  const handleSync = async (isAuto = false) => {
+  // Lógica de Sincronización Refactorizada para soportar updates en tiempo real
+  const handleSync = async (isAuto = false, overrideTransactions?: Transaction[], overrideDeletedIds?: string[]) => {
     if (!sheetsUrl) {
       if (!isAuto) {
         alert("Configura la URL de Brunance Sheets en Ajustes.");
@@ -75,6 +65,10 @@ const App: React.FC = () => {
       }
       return;
     }
+
+    // Usamos los datos pasados por parámetro o los del estado actual
+    const currentTxs = overrideTransactions || transactions;
+    const currentDeleted = overrideDeletedIds || deletedIds;
 
     setIsSyncing(true);
     try {
@@ -90,8 +84,11 @@ const App: React.FC = () => {
         }
       }
 
-      const filteredRemote = remoteData.filter(rt => !deletedIds.includes(rt.id));
-      const localMap = new Map(transactions.map(t => [t.id, t]));
+      // Filtrar lo que viene de la nube con los IDs borrados (locales y remotos)
+      const filteredRemote = remoteData.filter(rt => !currentDeleted.includes(rt.id));
+      
+      // Combinar con los locales actuales
+      const localMap = new Map(currentTxs.map(t => [t.id, t]));
       filteredRemote.forEach(rt => {
         if (!localMap.has(rt.id)) {
           localMap.set(rt.id, rt);
@@ -102,6 +99,7 @@ const App: React.FC = () => {
         new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
+      // Subir a la nube
       await fetch(sheetsUrl, {
         method: 'POST',
         mode: 'no-cors',
@@ -109,11 +107,12 @@ const App: React.FC = () => {
         body: JSON.stringify(mergedData),
       });
       
+      // Actualizar estados finales
       setTransactions(mergedData.map(t => ({ ...t, synced: true })));
       setDeletedIds([]);
       localStorage.removeItem('brunance_deleted_ids');
       
-      if (!isAuto) alert("Brunance: Nube y Celular sincronizados.");
+      if (!isAuto) console.log("Brunance: Sincronización exitosa.");
     } catch (error) {
       console.error("Sync error:", error);
       if (!isAuto) alert("Error en la sincronización. Verifica la URL.");
@@ -122,9 +121,29 @@ const App: React.FC = () => {
     }
   };
 
+  const addTransaction = (newTransaction: Transaction) => {
+    const nextTransactions = [newTransaction, ...transactions];
+    setTransactions(nextTransactions);
+    setPrefillTransaction(undefined);
+    setActiveTab('list');
+    
+    // Disparar sincronización inmediata
+    handleSync(true, nextTransactions);
+  };
+
+  const deleteTransaction = (id: string) => {
+    const nextTransactions = transactions.filter(t => t.id !== id);
+    const nextDeletedIds = [...deletedIds, id];
+    
+    setTransactions(nextTransactions);
+    setDeletedIds(nextDeletedIds);
+
+    // Disparar sincronización inmediata
+    handleSync(true, nextTransactions, nextDeletedIds);
+  };
+
   const forceAppUpdate = () => {
     if (confirm('Esto refrescará Brunance para buscar actualizaciones. ¿Continuar?')) {
-        // En iOS, esto es lo más cercano a un refresh real en PWA
         window.location.replace(window.location.href);
         setTimeout(() => {
             window.location.reload();
@@ -208,7 +227,12 @@ function doPost(e) {
             <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">Fran & Car Personal Finance</p>
             </div>
             <div className="flex gap-2 items-center">
-                {isSyncing && <span className="text-[8px] font-black text-teal-600 animate-pulse uppercase tracking-widest">Sincronizando</span>}
+                {isSyncing && (
+                  <div className="flex items-center gap-1 bg-teal-50 px-2 py-1 rounded-lg">
+                    <div className="w-1 h-1 bg-teal-600 rounded-full animate-ping" />
+                    <span className="text-[8px] font-black text-teal-600 uppercase tracking-widest">Nube</span>
+                  </div>
+                )}
                 <button 
                     onClick={() => handleSync(false)}
                     disabled={isSyncing}
@@ -257,7 +281,6 @@ function doPost(e) {
                     <h2 className="text-2xl font-black text-slate-800 pt-2">Brunance Panel</h2>
                 </div>
 
-                {/* BOTÓN DE ACTUALIZACIÓN RÁPIDA (PARA IOS) */}
                 <button 
                     onClick={forceAppUpdate}
                     className="w-full flex items-center justify-between p-4 bg-indigo-600 text-white rounded-3xl shadow-lg shadow-indigo-200 active:scale-95 transition-all"
@@ -343,8 +366,10 @@ function doPost(e) {
                             <span className="font-black text-slate-800">{transactions.length}</span>
                         </div>
                         <div className="flex justify-between text-[10px] py-1 border-b border-slate-50">
-                            <span className="text-slate-400 font-medium italic">En cola de borrado</span>
-                            <span className="font-black text-red-400">{deletedIds.length}</span>
+                            <span className="text-slate-400 font-medium italic">Estado Sync</span>
+                            <span className={`font-black ${isSyncing ? 'text-teal-600 animate-pulse' : 'text-slate-800'}`}>
+                                {isSyncing ? 'Subiendo...' : 'Al día'}
+                            </span>
                         </div>
                     </div>
                 </div>
