@@ -7,7 +7,7 @@ export type Currency = 'ARS' | 'USD';
 export enum PaymentCategory {
   EFECTIVO = 'Efectivo',
   TARJETA_CREDITO = 'Tarjeta de Crédito',
-  TARJETA_DEBITO = 'Tarjeta de Débito',
+  TARJETA_DEBITO = 'Cuenta',
   BILLETERA_DIGITAL = 'Billetera Digital',
   EMPRESA = 'Empresa'
 }
@@ -33,7 +33,8 @@ export interface Transaction {
   paymentMethodId: string; 
   toPaymentMethodId?: string; 
   synced: boolean;
-  isSettlement?: boolean; // Identifica transferencias para saldar deudas
+  isSettlement?: boolean;
+  installments?: number; // Total de cuotas (ej: 12)
 }
 
 export interface MonthlySummary {

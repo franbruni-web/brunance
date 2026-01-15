@@ -1,18 +1,25 @@
 
 import React from 'react';
-import { format, isToday, isYesterday } from 'date-fns';
+import { format, isToday, isYesterday, differenceInCalendarMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Transaction } from '../types';
 import { PAYMENT_METHODS } from '../constants';
-import { Trash2, ShoppingBag, ArrowUpRight, ArrowDownRight, ArrowLeftRight } from 'lucide-react';
+import { Trash2, ShoppingBag, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Layers } from 'lucide-react';
 
 interface HistoryListProps {
   transactions: Transaction[];
   onDelete: (id: string) => void;
+  currentMonth: Date;
 }
 
-const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => {
-  // Revertido a búsqueda simple por ID
+const formatNum = (num: number) => {
+  return new Intl.NumberFormat('es-AR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(num);
+};
+
+const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete, currentMonth }) => {
   const findMethod = (id: string) => PAYMENT_METHODS.find(m => m.id === id);
 
   const sortedTransactions = [...transactions].sort((a, b) => 
@@ -42,66 +49,49 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
     <div className="space-y-6 pb-24 p-4 no-scrollbar h-full overflow-y-auto">
       {Object.entries(groups).map(([date, items]) => (
         <div key={date} className="space-y-2">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1 font-sans">
             {getDateLabel(date)}
           </h3>
           <div className="space-y-3">
             {items.map((t) => {
-              const method = findMethod(t.paymentMethodId);
-              const toMethod = t.toPaymentMethodId ? findMethod(t.toPaymentMethodId) : null;
               const isIncome = t.nature === 'Ingreso';
               const isTransfer = t.nature === 'Transferencia';
+              const installments = t.installments || 1;
+              const diffMonths = differenceInCalendarMonths(currentMonth, new Date(t.date));
+              const currentInstallment = diffMonths + 1;
               
               return (
-                <div 
-                  key={t.id} 
-                  className={`bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between group border-l-4 ${
-                    isIncome ? 'border-l-green-500' : isTransfer ? 'border-l-indigo-400' : 'border-l-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-xl ${
-                      isIncome ? 'bg-green-50 text-green-600' : 
-                      isTransfer ? 'bg-indigo-50 text-indigo-600' :
-                      'bg-slate-50 text-slate-400'
-                    }`}>
-                      {isIncome ? <ArrowUpRight size={20} /> : 
-                       isTransfer ? <ArrowLeftRight size={20} /> : 
-                       <ArrowDownRight size={20} />}
+                <div key={t.id} className="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between border-l-4 border-l-slate-100 transition-all active:bg-slate-50">
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className={`p-3 rounded-xl shrink-0 ${isIncome ? 'bg-green-50 text-green-600' : isTransfer ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
+                      {isIncome ? <ArrowUpRight size={20} /> : isTransfer ? <ArrowLeftRight size={20} /> : <ArrowDownRight size={20} />}
                     </div>
-                    <div>
-                      <div className="font-bold text-slate-800 line-clamp-1 text-sm">
-                        {isTransfer ? `De ${method?.name || '...'} a ${toMethod?.name || '...'}` : t.description}
-                      </div>
-                      <div className="flex items-center gap-2 text-[10px] font-medium text-slate-400">
-                        <span className="bg-slate-100 px-1.5 py-0.5 rounded uppercase tracking-tighter font-bold">
-                          {t.payer}
-                        </span>
-                        {!isTransfer && (
-                          <>
-                            <span className="w-1 h-1 rounded-full bg-slate-200" />
-                            <span>{method?.name || 'Cuenta Desconocida'}</span>
-                          </>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-slate-800 text-sm truncate">{t.description}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[9px] font-black text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded shrink-0">{t.payer}</span>
+                        {installments > 1 && (
+                          <span className="text-[9px] font-black text-indigo-500 uppercase bg-indigo-50 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
+                            <Layers size={8} /> Cuota {currentInstallment}/{installments}
+                          </span>
                         )}
-                        {isTransfer && <span className="text-[8px] text-indigo-400 font-bold uppercase">Movimiento Interno</span>}
                       </div>
                     </div>
                   </div>
-                  <div className="text-right flex items-center gap-3">
-                    <div>
-                      <div className={`font-bold text-sm flex items-center gap-1 ${
-                        isIncome ? 'text-green-600' : 
-                        isTransfer ? 'text-indigo-600' : 
-                        'text-slate-900'
-                      }`}>
-                        {isIncome ? '+' : isTransfer ? '↔' : '-'}{t.amount.toLocaleString()}
-                        <span className="text-[8px] opacity-60">{t.currency}</span>
+                  <div className="text-right flex items-center gap-2 ml-2">
+                    <div className="shrink-0 mr-1">
+                      <div className={`font-black text-sm ${isIncome ? 'text-green-600' : isTransfer ? 'text-indigo-600' : 'text-slate-900'}`}>
+                        ${formatNum(t.amount / (installments > 1 ? installments : 1))}
                       </div>
-                      <div className="text-[10px] text-slate-400">{format(new Date(t.date), 'HH:mm')}</div>
+                      <div className="text-[9px] font-bold text-slate-300 uppercase leading-none">{t.currency}</div>
                     </div>
                     <button 
-                      onClick={() => onDelete(t.id)}
-                      className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(t.id);
+                      }} 
+                      title="Eliminar"
+                      className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all active:scale-90"
                     >
                       <Trash2 size={18} />
                     </button>
@@ -112,11 +102,11 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
           </div>
         </div>
       ))}
-
-      {transactions.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+      
+      {Object.keys(groups).length === 0 && (
+        <div className="h-64 flex flex-col items-center justify-center text-slate-300">
           <ShoppingBag size={48} strokeWidth={1} className="mb-4 opacity-20" />
-          <p className="text-sm">No hay registros aún en este mes</p>
+          <p className="text-xs font-bold uppercase tracking-widest">Sin movimientos este mes</p>
         </div>
       )}
     </div>
