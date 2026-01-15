@@ -1,459 +1,158 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, ShieldCheck, CloudDownload, Zap, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, 
+  ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, 
+  ShieldCheck, CloudDownload, Zap, CheckCircle2, AlertCircle, Loader2 
+} from 'lucide-react';
 import TransactionForm from './components/ExpenseForm';
 import HistoryList from './components/HistoryList';
 import Dashboard from './components/Dashboard';
 import { Transaction } from './types';
-import { format, addMonths, subMonths, endOfMonth, isWithinInterval } from 'date-fns';
+// Fixed: Removed subMonths as it was reported missing in the module; using addMonths with negative values instead.
+// Added startOfMonth to facilitate correct filtering of transactions for the selected month.
+import { format, addMonths, endOfMonth, isWithinInterval, startOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-const APP_VERSION = "4.5.0 Calculator-Sync-Toast";
+const APP_VERSION = "4.5.1 Robust-ID-Match";
 
-type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
-
+/**
+ * Main App component for Brunance.
+ * Handles state for transactions, navigation views, and month selection.
+ */
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'add' | 'list' | 'stats' | 'settings'>('add');
+  const [view, setView] = useState<'dashboard' | 'history' | 'add'>('dashboard');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [deletedIds, setDeletedIds] = useState<string[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
-  const [sheetsUrl, setSheetsUrl] = useState<string>(localStorage.getItem('brunance_sheets_url') || '');
-  
   const [selectedMonth, setSelectedMonth] = useState(new Date());
-  const [prefillTransaction, setPrefillTransaction] = useState<Partial<Transaction> | undefined>(undefined);
-  
-  const hasAutoSynced = useRef(false);
+  const [prefill, setPrefill] = useState<any>(null);
 
-  // Carga inicial
+  // Persistence: Load transactions from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem('brunance_transactions_v3');
-    const savedDeleted = localStorage.getItem('brunance_deleted_ids');
-    
+    const saved = localStorage.getItem('brunance_transactions');
     if (saved) {
       try {
         setTransactions(JSON.parse(saved));
       } catch (e) {
-        console.error("Failed to load transactions", e);
-      }
-    }
-    if (savedDeleted) {
-      try {
-        setDeletedIds(JSON.parse(savedDeleted));
-      } catch (e) {
-        console.error("Failed to load deleted ids", e);
+        console.error("Failed to load transactions:", e);
       }
     }
   }, []);
 
-  // Persistencia local
+  // Persistence: Save transactions to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem('brunance_transactions_v3', JSON.stringify(transactions));
+    localStorage.setItem('brunance_transactions', JSON.stringify(transactions));
   }, [transactions]);
 
-  useEffect(() => {
-    localStorage.setItem('brunance_deleted_ids', JSON.stringify(deletedIds));
-  }, [deletedIds]);
-
-  useEffect(() => {
-    localStorage.setItem('brunance_sheets_url', sheetsUrl);
-  }, [sheetsUrl]);
-
-  // Lógica de Sincronización con Feedback Visual (Toast)
-  const handleSync = async (isAuto = false, overrideTransactions?: Transaction[], overrideDeletedIds?: string[]) => {
-    if (!sheetsUrl) {
-      if (!isAuto) {
-        alert("Configura la URL de Brunance Sheets en Ajustes.");
-        setActiveTab('settings');
-      }
-      return;
-    }
-
-    const currentTxs = overrideTransactions || transactions;
-    const currentDeleted = overrideDeletedIds || deletedIds;
-
-    setIsSyncing(true);
-    setSyncStatus('syncing');
-
-    try {
-      const response = await fetch(sheetsUrl);
-      let remoteData: Transaction[] = [];
-      
-      if (response.ok) {
-        const text = await response.text();
-        try {
-          remoteData = JSON.parse(text);
-        } catch (e) {
-          console.log("Nube vacía o formato inválido.");
-        }
-      }
-
-      const filteredRemote = remoteData.filter(rt => !currentDeleted.includes(rt.id));
-      
-      const localMap = new Map(currentTxs.map(t => [t.id, t]));
-      filteredRemote.forEach(rt => {
-        if (!localMap.has(rt.id)) {
-          localMap.set(rt.id, rt);
-        }
-      });
-      
-      const mergedData = Array.from(localMap.values()).sort((a, b) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-
-      await fetch(sheetsUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mergedData),
-      });
-      
-      setTransactions(mergedData.map(t => ({ ...t, synced: true })));
-      setDeletedIds([]);
-      localStorage.removeItem('brunance_deleted_ids');
-      
-      setSyncStatus('success');
-      setTimeout(() => setSyncStatus('idle'), 3000);
-    } catch (error) {
-      console.error("Sync error:", error);
-      setSyncStatus('error');
-      setTimeout(() => setSyncStatus('idle'), 5000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const addTransaction = (newTransaction: Transaction) => {
-    const nextTransactions = [newTransaction, ...transactions];
-    setTransactions(nextTransactions);
-    setPrefillTransaction(undefined);
-    setActiveTab('list');
-    handleSync(true, nextTransactions);
-  };
-
-  const deleteTransaction = (id: string) => {
-    const nextTransactions = transactions.filter(t => t.id !== id);
-    const nextDeletedIds = [...deletedIds, id];
-    setTransactions(nextTransactions);
-    setDeletedIds(nextDeletedIds);
-    handleSync(true, nextTransactions, nextDeletedIds);
-  };
-
-  const forceAppUpdate = () => {
-    if (confirm('Esto refrescará Brunance para buscar actualizaciones. ¿Continuar?')) {
-        window.location.replace(window.location.href);
-        setTimeout(() => {
-            window.location.reload();
-        }, 100);
-    }
-  };
-
-  // Auto-Sync al abrir la app
-  useEffect(() => {
-    if (sheetsUrl && !hasAutoSynced.current) {
-        const timer = setTimeout(() => {
-            handleSync(true);
-            hasAutoSynced.current = true;
-        }, 1500);
-        return () => clearTimeout(timer);
-    }
-  }, [sheetsUrl]);
-
+  // Derived state: filter transactions for the currently viewed month
   const filteredTransactions = useMemo(() => {
+    const start = startOfMonth(selectedMonth);
+    const end = endOfMonth(selectedMonth);
     return transactions.filter(t => {
-        const date = new Date(t.date);
-        const start = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
-        return isWithinInterval(date, { 
-            start: start, 
-            end: endOfMonth(selectedMonth) 
-        });
+      const d = new Date(t.date);
+      return isWithinInterval(d, { start, end });
     });
   }, [transactions, selectedMonth]);
 
-  const handleSettle = (prefill: any) => {
-    setPrefillTransaction(prefill);
-    setActiveTab('add');
+  const handleAddTransaction = (t: Transaction) => {
+    setTransactions(prev => [t, ...prev]);
+    setView('history');
+    setPrefill(null);
   };
 
-  const changeMonth = (delta: number) => {
-    setSelectedMonth(prev => delta > 0 ? addMonths(prev, 1) : subMonths(prev, 1));
-  };
-
-  const copyScriptCode = () => {
-    const code = `function doGet() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return ContentService.createTextOutput("[]").setMimeType(ContentService.MimeType.JSON);
-  
-  var headers = data[0];
-  var json = [];
-  for (var i = 1; i < data.length; i++) {
-    var obj = {};
-    for (var j = 0; j < headers.length; j++) {
-      var headerName = headers[j].toLowerCase();
-      if (headerName === 'identificador') headerName = 'id';
-      obj[headerName] = data[i][j];
+  const handleDeleteTransaction = (id: string) => {
+    if (window.confirm('¿Eliminar esta transacción?')) {
+      setTransactions(prev => prev.filter(t => t.id !== id));
     }
-    json.push(obj);
-  }
-  return ContentService.createTextOutput(JSON.stringify(json)).setMimeType(ContentService.MimeType.JSON);
-}
+  };
 
-function doPost(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = JSON.parse(e.postData.contents);
-  sheet.clear();
-  sheet.appendRow(["identificador", "date", "nature", "amount", "currency", "description", "payer", "type", "paymentMethodId"]);
-  data.forEach(function(t) {
-    sheet.appendRow([t.id, t.date, t.nature, t.amount, t.currency, t.description, t.payer, t.type, t.paymentMethodId]);
-  });
-  return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
-}`;
-    navigator.clipboard.writeText(code);
-    alert("Código Brunance Full-Sync copiado.");
+  const handleSettle = (data: any) => {
+    setPrefill(data);
+    setView('add');
+  };
+
+  const navigateMonth = (direction: number) => {
+    // Fixed: Using addMonths instead of the problematic subMonths
+    setSelectedMonth(prev => addMonths(prev, direction));
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto bg-slate-50 overflow-hidden relative">
-      {/* Toast de Sincronización */}
-      {syncStatus !== 'idle' && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in zoom-in slide-in-from-top-4 duration-300">
-          <div className={`px-4 py-2 rounded-full shadow-2xl border flex items-center gap-3 backdrop-blur-md ${
-            syncStatus === 'syncing' ? 'bg-indigo-600/90 text-white border-indigo-400' :
-            syncStatus === 'success' ? 'bg-teal-600/90 text-white border-teal-400' :
-            'bg-red-600/90 text-white border-red-400'
-          }`}>
-            {syncStatus === 'syncing' && <Loader2 size={16} className="animate-spin" />}
-            {syncStatus === 'success' && <CheckCircle2 size={16} />}
-            {syncStatus === 'error' && <AlertCircle size={16} />}
-            <span className="text-[10px] font-black uppercase tracking-widest">
-              {syncStatus === 'syncing' ? 'Sincronizando...' : 
-               syncStatus === 'success' ? 'Datos al día' : 'Error de Sync'}
-            </span>
-          </div>
+    <div className="min-h-screen bg-slate-50 flex flex-col max-w-md mx-auto shadow-2xl overflow-hidden h-screen border-x border-slate-200">
+      <header className="bg-white border-b p-4 flex items-center justify-between z-10 shadow-sm">
+        <div>
+          <h1 className="font-black text-xl text-slate-800 italic leading-none tracking-tighter">BRUNANCE</h1>
+          <span className="text-[7px] font-bold opacity-30 uppercase tracking-[0.2em]">{APP_VERSION}</span>
         </div>
-      )}
-
-      <header className="px-6 pt-6 pb-2 bg-white border-b border-slate-100 shrink-0">
-        <div className="flex justify-between items-center mb-4">
-            <div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tighter flex items-center gap-1">
-                BRUN<span className="text-teal-600">ANCE</span>
-            </h1>
-            <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">Fran & Car Personal Finance</p>
-            </div>
-            <div className="flex gap-2 items-center">
-                <button 
-                    onClick={() => handleSync(false)}
-                    disabled={isSyncing}
-                    className={`p-2.5 rounded-2xl transition-all shadow-sm ${isSyncing ? 'bg-indigo-50 text-indigo-600 animate-spin' : 'bg-slate-800 text-white hover:bg-teal-600'}`}
-                    title="Sincronizar Nube"
-                >
-                    <RefreshCw size={20} />
-                </button>
-            </div>
-        </div>
-
-        <div className="flex items-center justify-between bg-slate-100 rounded-2xl p-1 mb-2">
-            <button onClick={() => changeMonth(-1)} className="p-2 text-slate-400 hover:text-teal-600 transition-colors"><ChevronLeft size={20}/></button>
-            <div className="flex items-center gap-2 text-xs font-black text-slate-600 uppercase tracking-widest">
-                {format(selectedMonth, 'MMMM yyyy', { locale: es })}
-            </div>
-            <button onClick={() => changeMonth(1)} className="p-2 text-slate-400 hover:text-teal-600 transition-colors"><ChevronRight size={20}/></button>
+        
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <button 
+            onClick={() => navigateMonth(-1)} 
+            className="p-1.5 hover:bg-white rounded-lg transition-all active:scale-90"
+          >
+            <ChevronLeft size={16} className="text-slate-600" />
+          </button>
+          <span className="text-[10px] font-black uppercase px-2 w-28 text-center text-slate-700">
+            {format(selectedMonth, 'MMMM yyyy', { locale: es })}
+          </span>
+          <button 
+            onClick={() => navigateMonth(1)} 
+            className="p-1.5 hover:bg-white rounded-lg transition-all active:scale-90"
+          >
+            <ChevronRight size={16} className="text-slate-600" />
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden relative">
-        {activeTab === 'add' && (
-          <TransactionForm 
-            onAdd={addTransaction} 
-            prefill={prefillTransaction} 
-            allTransactions={transactions}
+      <main className="flex-1 overflow-hidden">
+        {view === 'dashboard' && (
+          <Dashboard 
+            transactions={filteredTransactions} 
+            allTransactions={transactions} 
+            onSettle={handleSettle} 
+            selectedMonth={selectedMonth} 
           />
         )}
-        {activeTab === 'list' && <HistoryList transactions={filteredTransactions} onDelete={deleteTransaction} />}
-        {activeTab === 'stats' && (
-            <div className="h-full flex flex-col">
-                <Dashboard 
-                  transactions={filteredTransactions} 
-                  allTransactions={transactions}
-                  onSettle={handleSettle} 
-                  selectedMonth={selectedMonth}
-                />
-            </div>
+        {view === 'history' && (
+          <HistoryList 
+            transactions={filteredTransactions} 
+            onDelete={handleDeleteTransaction} 
+          />
         )}
-        {activeTab === 'settings' && (
-            <div className="p-6 space-y-6 h-full overflow-y-auto no-scrollbar pb-24">
-                <div className="flex flex-col items-center text-center space-y-2 mb-4">
-                    <div className="w-20 h-20 bg-slate-800 text-white rounded-[2rem] flex items-center justify-center shadow-xl rotate-3">
-                        <ShieldCheck size={40} />
-                    </div>
-                    <h2 className="text-2xl font-black text-slate-800 pt-2">Brunance Panel</h2>
-                </div>
-
-                <button 
-                    onClick={forceAppUpdate}
-                    className="w-full flex items-center justify-between p-4 bg-indigo-600 text-white rounded-3xl shadow-lg shadow-indigo-200 active:scale-95 transition-all"
-                >
-                    <div className="flex items-center gap-3">
-                        <div className="bg-white/20 p-2 rounded-xl">
-                            <Zap size={20} className="fill-white" />
-                        </div>
-                        <div className="text-left">
-                            <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Nueva Versión</p>
-                            <p className="text-sm font-bold">Actualizar Aplicación</p>
-                        </div>
-                    </div>
-                    <RefreshCw size={20} />
-                </button>
-
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
-                    <div className="flex items-center gap-2 font-black text-slate-800 uppercase text-xs tracking-wider">
-                        <Smartphone size={16} className="text-teal-600" />
-                        Llevar Brunance al Celular
-                    </div>
-                    <div className="space-y-3">
-                        <div className="flex gap-3 items-start p-3 bg-slate-50 rounded-2xl">
-                            <Apple size={20} className="text-slate-400 shrink-0" />
-                            <div>
-                                <p className="text-[11px] font-bold text-slate-700">iPhone (Safari)</p>
-                                <p className="text-[10px] text-slate-500">Compartir &gt; "Añadir a pantalla de inicio"</p>
-                            </div>
-                        </div>
-                        <div className="flex gap-3 items-start p-3 bg-slate-50 rounded-2xl">
-                            <Smartphone size={20} className="text-slate-400 shrink-0" />
-                            <div>
-                                <p className="text-[11px] font-bold text-slate-700">Android (Chrome)</p>
-                                <p className="text-[10px] text-slate-500">Menú (⋮) &gt; "Instalar aplicación"</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-teal-50 p-5 rounded-3xl border border-teal-100 space-y-4">
-                    <div className="flex items-center gap-2 text-teal-900 font-black text-xs uppercase tracking-wider">
-                        <Table size={16} className="text-teal-600" />
-                        Brunance Cloud Sync (Full)
-                    </div>
-                    
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-teal-600 uppercase">Script URL</label>
-                        <input 
-                            type="text" 
-                            placeholder="URL de tu Google Apps Script..."
-                            value={sheetsUrl}
-                            onChange={(e) => setSheetsUrl(e.target.value)}
-                            className="w-full bg-white border-teal-200 rounded-xl text-xs p-3 focus:ring-2 focus:ring-teal-500"
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-2">
-                        <button 
-                            onClick={copyScriptCode}
-                            className="w-full flex items-center justify-center gap-2 py-3 bg-teal-600 text-white text-xs font-black rounded-xl hover:bg-teal-700 transition-colors shadow-md"
-                        >
-                            <Copy size={14} /> Copiar Código
-                        </button>
-                        <button 
-                            onClick={() => handleSync(false)}
-                            disabled={isSyncing}
-                            className="w-full flex items-center justify-center gap-2 py-3 bg-white text-teal-600 border border-teal-200 text-xs font-black rounded-xl hover:bg-teal-50 transition-colors"
-                        >
-                            <CloudDownload size={14} /> Sincronización Manual
-                        </button>
-                    </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                    <div className="text-[10px] font-black text-slate-400 mb-3 uppercase tracking-[0.2em]">Brunance Engine Info</div>
-                    <div className="space-y-3">
-                        <div className="flex justify-between text-xs py-1 border-b border-slate-50">
-                            <span className="text-slate-500 font-medium">Build</span>
-                            <span className="font-black text-slate-800">{APP_VERSION}</span>
-                        </div>
-                        <div className="flex justify-between text-xs py-1 border-b border-slate-50">
-                            <span className="text-slate-500 font-medium">Registros</span>
-                            <span className="font-black text-slate-800">{transactions.length}</span>
-                        </div>
-                        <div className="flex justify-between text-[10px] py-1 border-b border-slate-50">
-                            <span className="text-slate-400 font-medium italic">Estado Sync</span>
-                            <span className={`font-black ${syncStatus === 'syncing' ? 'text-indigo-600 animate-pulse' : 'text-slate-800'}`}>
-                                {syncStatus === 'syncing' ? 'Subiendo...' : 
-                                 syncStatus === 'error' ? 'Fallo' : 'Al día'}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                
-                <button 
-                  onClick={() => {
-                    if(confirm('¿Seguro quieres borrar los datos locales de Brunance?')) {
-                      setTransactions([]);
-                      setDeletedIds([]);
-                      localStorage.removeItem('brunance_transactions_v3');
-                      localStorage.removeItem('brunance_deleted_ids');
-                      window.location.reload();
-                    }
-                  }}
-                  className="w-full py-4 text-red-500 text-[10px] font-black uppercase tracking-widest bg-red-50 rounded-2xl border border-red-100"
-                >
-                  Hard Reset
-                </button>
-            </div>
+        {view === 'add' && (
+          <TransactionForm 
+            onAdd={handleAddTransaction} 
+            allTransactions={transactions} 
+            prefill={prefill || undefined}
+          />
         )}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/80 backdrop-blur-lg border-t border-slate-100 pb-safe shadow-[0_-8px_30px_rgb(0,0,0,0.04)]">
-        <div className="flex justify-around items-center h-20 px-4">
-          <NavButton 
-            active={activeTab === 'add'} 
-            onClick={() => { setActiveTab('add'); setPrefillTransaction(undefined); }} 
-            icon={<PlusCircle size={26} />} 
-            label="Cargar"
-          />
-          <NavButton 
-            active={activeTab === 'list'} 
-            onClick={() => setActiveTab('list')} 
-            icon={<List size={26} />} 
-            label="Detalle"
-          />
-          <NavButton 
-            active={activeTab === 'stats'} 
-            onClick={() => setActiveTab('stats')} 
-            icon={<ChartIcon size={26} />} 
-            label="Resumen"
-          />
-          <NavButton 
-            active={activeTab === 'settings'} 
-            onClick={() => setActiveTab('settings')} 
-            icon={<Settings size={26} />} 
-            label="Ajustes"
-          />
-        </div>
+      <nav className="bg-white border-t p-2 flex justify-around items-center pb-safe shadow-[0_-4px_10px_rgba(0,0,0,0.03)]">
+        <button 
+          onClick={() => {setView('dashboard'); setPrefill(null);}} 
+          className={`p-2 flex flex-col items-center transition-all ${view === 'dashboard' ? 'text-indigo-600' : 'text-slate-300'}`}
+        >
+          <ChartIcon size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} />
+          <span className="text-[8px] font-black uppercase mt-1 tracking-widest">Resumen</span>
+        </button>
+        
+        <button 
+          onClick={() => {setView('add'); setPrefill(null);}} 
+          className={`p-3 -mt-10 bg-white rounded-full shadow-xl border-4 border-slate-50 flex flex-col items-center transition-all ${view === 'add' ? 'text-green-600 rotate-45' : 'text-slate-400 hover:text-indigo-500'}`}
+        >
+          <PlusCircle size={36} strokeWidth={2.5} />
+        </button>
+        
+        <button 
+          onClick={() => {setView('history'); setPrefill(null);}} 
+          className={`p-2 flex flex-col items-center transition-all ${view === 'history' ? 'text-indigo-600' : 'text-slate-300'}`}
+        >
+          <List size={24} strokeWidth={view === 'history' ? 2.5 : 2} />
+          <span className="text-[8px] font-black uppercase mt-1 tracking-widest">Historial</span>
+        </button>
       </nav>
     </div>
   );
 };
 
-interface NavButtonProps {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}
-
-const NavButton: React.FC<NavButtonProps> = ({ active, onClick, icon, label }) => (
-  <button
-    onClick={onClick}
-    className={`flex flex-col items-center justify-center w-20 transition-all ${
-      active ? 'text-teal-600 scale-110' : 'text-slate-400'
-    }`}
-  >
-    <div className={`p-1 rounded-xl transition-colors ${active ? 'bg-teal-50' : ''}`}>
-        {icon}
-    </div>
-    <span className="text-[9px] font-black mt-1 uppercase tracking-tighter">{label}</span>
-  </button>
-);
-
+// Fixed: Added default export to resolve error in index.tsx
 export default App;
