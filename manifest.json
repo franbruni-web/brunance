@@ -3,8 +3,10 @@
   "name": "Brunance Couple Finance",
   "short_name": "Brunance",
   "description": "Gestión de gastos compartidos Bruni Edition",
-  "start_url": "./index.html",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#f8fafc",
   "theme_color": "#0f172a",
   "icons": [
