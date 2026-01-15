@@ -12,6 +12,13 @@ interface HistoryListProps {
 }
 
 const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => {
+  // Lógica robusta para encontrar cuentas ignorando mayúsculas/minúsculas/espacios
+  const findMethod = (id: string) => {
+    if (!id) return null;
+    const normalizedId = id.toString().trim().toLowerCase();
+    return PAYMENT_METHODS.find(m => m.id.toLowerCase().trim() === normalizedId);
+  };
+
   const sortedTransactions = [...transactions].sort((a, b) => 
     new Date(b.date).getTime() - new Date(a.date).getTime()
   );
@@ -19,7 +26,6 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
   const groupTransactionsByDate = () => {
     const groups: Record<string, Transaction[]> = {};
     sortedTransactions.forEach(t => {
-      // Using native Date instead of parseISO as it is not exported from date-fns in this environment
       const dateKey = format(new Date(t.date), 'yyyy-MM-dd');
       if (!groups[dateKey]) groups[dateKey] = [];
       groups[dateKey].push(t);
@@ -30,7 +36,6 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
   const groups = groupTransactionsByDate();
 
   const getDateLabel = (dateStr: string) => {
-    // Using native Date instead of parseISO
     const date = new Date(dateStr);
     if (isToday(date)) return 'Hoy';
     if (isYesterday(date)) return 'Ayer';
@@ -46,8 +51,8 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
           </h3>
           <div className="space-y-3">
             {items.map((t) => {
-              const method = PAYMENT_METHODS.find(m => m.id === t.paymentMethodId);
-              const toMethod = t.toPaymentMethodId ? PAYMENT_METHODS.find(m => m.id === t.toPaymentMethodId) : null;
+              const method = findMethod(t.paymentMethodId);
+              const toMethod = t.toPaymentMethodId ? findMethod(t.toPaymentMethodId) : null;
               const isIncome = t.nature === 'Ingreso';
               const isTransfer = t.nature === 'Transferencia';
               
@@ -69,8 +74,8 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
                        <ArrowDownRight size={20} />}
                     </div>
                     <div>
-                      <div className="font-bold text-slate-800 line-clamp-1">
-                        {isTransfer ? `De ${method?.name} a ${toMethod?.name}` : t.description}
+                      <div className="font-bold text-slate-800 line-clamp-1 text-sm">
+                        {isTransfer ? `De ${method?.name || '...'} a ${toMethod?.name || '...'}` : t.description}
                       </div>
                       <div className="flex items-center gap-2 text-[10px] font-medium text-slate-400">
                         <span className="bg-slate-100 px-1.5 py-0.5 rounded uppercase tracking-tighter font-bold">
@@ -79,7 +84,7 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
                         {!isTransfer && (
                           <>
                             <span className="w-1 h-1 rounded-full bg-slate-200" />
-                            <span>{method?.name || 'Otro'}</span>
+                            <span>{method?.name || 'Cuenta Desconocida'}</span>
                           </>
                         )}
                         {isTransfer && <span className="text-[8px] text-indigo-400 font-bold uppercase">Movimiento Interno</span>}
@@ -88,7 +93,7 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
                   </div>
                   <div className="text-right flex items-center gap-3">
                     <div>
-                      <div className={`font-bold flex items-center gap-1 ${
+                      <div className={`font-bold text-sm flex items-center gap-1 ${
                         isIncome ? 'text-green-600' : 
                         isTransfer ? 'text-indigo-600' : 
                         'text-slate-900'
@@ -96,7 +101,6 @@ const HistoryList: React.FC<HistoryListProps> = ({ transactions, onDelete }) => 
                         {isIncome ? '+' : isTransfer ? '↔' : '-'}{t.amount.toLocaleString()}
                         <span className="text-[8px] opacity-60">{t.currency}</span>
                       </div>
-                      {/* Using native Date instead of parseISO */}
                       <div className="text-[10px] text-slate-400">{format(new Date(t.date), 'HH:mm')}</div>
                     </div>
                     <button 
