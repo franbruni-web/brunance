@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, ShieldCheck } from 'lucide-react';
+import { PlusCircle, List, PieChart as ChartIcon, Settings, RefreshCw, ChevronLeft, ChevronRight, Table, Copy, Smartphone, Apple, ShieldCheck, CloudDownload } from 'lucide-react';
 import TransactionForm from './components/ExpenseForm';
 import HistoryList from './components/HistoryList';
 import Dashboard from './components/Dashboard';
@@ -55,18 +55,45 @@ const App: React.FC = () => {
 
     setIsSyncing(true);
     try {
+      // 1. Intentar descargar datos actuales de la nube (GET)
+      // Nota: Google Apps Script requiere que la URL termine en /exec o similar
+      const response = await fetch(sheetsUrl);
+      let remoteData: Transaction[] = [];
+      
+      if (response.ok) {
+        const text = await response.text();
+        try {
+          remoteData = JSON.parse(text);
+        } catch (e) {
+          console.log("No hay datos previos en la nube o formato inválido.");
+        }
+      }
+
+      // 2. Combinar datos locales con remotos evitando duplicados por ID
+      const localMap = new Map(transactions.map(t => [t.id, t]));
+      remoteData.forEach(rt => {
+        if (!localMap.has(rt.id)) {
+          localMap.set(rt.id, rt);
+        }
+      });
+      
+      const mergedData = Array.from(localMap.values()).sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      // 3. Subir la lista combinada (POST)
       await fetch(sheetsUrl, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(transactions),
+        body: JSON.stringify(mergedData),
       });
       
-      setTransactions(prev => prev.map(t => ({ ...t, synced: true })));
-      alert("Brunance: Sincronización exitosa.");
+      setTransactions(mergedData.map(t => ({ ...t, synced: true })));
+      alert("Brunance: Nube y Celular sincronizados.");
     } catch (error) {
       console.error("Sync error:", error);
-      alert("Error en la sincronización Brunance.");
+      alert("Error en la sincronización. Verifica la URL y permisos.");
     } finally {
       setIsSyncing(false);
     }
@@ -74,9 +101,7 @@ const App: React.FC = () => {
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-        // Using native Date instead of parseISO which is reported as missing
         const date = new Date(t.date);
-        // Manual calculation of start of month since startOfMonth import failed
         const start = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
         return isWithinInterval(date, { 
             start: start, 
@@ -95,18 +120,38 @@ const App: React.FC = () => {
   };
 
   const copyScriptCode = () => {
-    const code = `function doPost(e) {
+    const code = `function doGet() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return ContentService.createTextOutput("[]").setMimeType(ContentService.MimeType.JSON);
+  
+  var headers = data[0];
+  var json = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      var headerName = headers[j].toLowerCase();
+      // Mapeo simple de vuelta a las keys de Brunance
+      if (headerName === 'identificador') headerName = 'id';
+      obj[headerName] = data[i][j];
+    }
+    json.push(obj);
+  }
+  return ContentService.createTextOutput(JSON.stringify(json)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var data = JSON.parse(e.postData.contents);
   sheet.clear();
-  sheet.appendRow(["ID", "Fecha", "Naturaleza", "Monto", "Moneda", "Descripción", "Pagó", "Beneficio", "Cuenta"]);
+  sheet.appendRow(["identificador", "date", "nature", "amount", "currency", "description", "payer", "type", "paymentMethodId"]);
   data.forEach(function(t) {
     sheet.appendRow([t.id, t.date, t.nature, t.amount, t.currency, t.description, t.payer, t.type, t.paymentMethodId]);
   });
-  return ContentService.createTextOutput("Brunance Success").setMimeType(ContentService.MimeType.TEXT);
+  return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
 }`;
     navigator.clipboard.writeText(code);
-    alert("Código Brunance copiado.");
+    alert("Código Brunance Full-Sync copiado. Recuerda publicarlo como 'Cualquier persona'!");
   };
 
   return (
@@ -119,13 +164,16 @@ const App: React.FC = () => {
             </h1>
             <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">Fran & Car Personal Finance</p>
             </div>
-            <button 
-                onClick={handleSync}
-                disabled={isSyncing}
-                className={`p-2.5 rounded-2xl transition-all shadow-sm ${isSyncing ? 'bg-teal-50 text-teal-600 animate-spin' : 'bg-slate-800 text-white hover:bg-teal-600'}`}
-            >
-            <RefreshCw size={20} />
-            </button>
+            <div className="flex gap-2">
+                <button 
+                    onClick={handleSync}
+                    disabled={isSyncing}
+                    className={`p-2.5 rounded-2xl transition-all shadow-sm ${isSyncing ? 'bg-teal-50 text-teal-600 animate-spin' : 'bg-slate-800 text-white hover:bg-teal-600'}`}
+                    title="Sincronizar Nube"
+                >
+                    <RefreshCw size={20} />
+                </button>
+            </div>
         </div>
 
         <div className="flex items-center justify-between bg-slate-100 rounded-2xl p-1 mb-2">
@@ -191,7 +239,7 @@ const App: React.FC = () => {
                 <div className="bg-teal-50 p-5 rounded-3xl border border-teal-100 space-y-4">
                     <div className="flex items-center gap-2 text-teal-900 font-black text-xs uppercase tracking-wider">
                         <Table size={16} className="text-teal-600" />
-                        Brunance Cloud Sync
+                        Brunance Cloud Sync (Full)
                     </div>
                     
                     <div className="space-y-2">
@@ -205,12 +253,24 @@ const App: React.FC = () => {
                         />
                     </div>
 
-                    <button 
-                        onClick={copyScriptCode}
-                        className="w-full flex items-center justify-center gap-2 py-3 bg-teal-600 text-white text-xs font-black rounded-xl hover:bg-teal-700 transition-colors shadow-md"
-                    >
-                        <Copy size={14} /> Copiar Código para Planilla
-                    </button>
+                    <div className="grid grid-cols-1 gap-2">
+                        <button 
+                            onClick={copyScriptCode}
+                            className="w-full flex items-center justify-center gap-2 py-3 bg-teal-600 text-white text-xs font-black rounded-xl hover:bg-teal-700 transition-colors shadow-md"
+                        >
+                            <Copy size={14} /> Copiar Nuevo Código (Merge)
+                        </button>
+                        <button 
+                            onClick={handleSync}
+                            disabled={isSyncing}
+                            className="w-full flex items-center justify-center gap-2 py-3 bg-white text-teal-600 border border-teal-200 text-xs font-black rounded-xl hover:bg-teal-50 transition-colors"
+                        >
+                            <CloudDownload size={14} /> Forzar Sincronización Total
+                        </button>
+                    </div>
+                    <p className="text-[9px] text-teal-700 font-medium leading-tight">
+                        * El nuevo código permite "bajar" datos. Si ya tenías un script, debes reemplazarlo por este y volver a Implementar.
+                    </p>
                 </div>
 
                 <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
@@ -218,7 +278,7 @@ const App: React.FC = () => {
                     <div className="space-y-3">
                         <div className="flex justify-between text-xs py-1 border-b border-slate-50">
                             <span className="text-slate-500 font-medium">Build</span>
-                            <span className="font-black text-slate-800">4.0.0 Brunance Pure</span>
+                            <span className="font-black text-slate-800">4.1.0 Cloud-Merge</span>
                         </div>
                         <div className="flex justify-between text-xs py-1 border-b border-slate-50">
                             <span className="text-slate-500 font-medium">Registros</span>
